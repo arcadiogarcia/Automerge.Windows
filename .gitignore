@@ -3,6 +3,7 @@ rust-core/target/
 
 # ─── C++ / CMake build outputs ────────────────────────────────────────────────
 build/
+!winrt-component/build/
 *.o
 *.obj
 *.a

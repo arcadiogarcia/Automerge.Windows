@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>Automerge.Windows.WinRT</id>
+    <version>$version$</version>
+    <authors>Arcadio Garcia</authors>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <license type="expression">MIT</license>
+    <projectUrl>https://github.com/arcadiogarcia/Automerge.Windows</projectUrl>
+    <repository type="git" url="https://github.com/arcadiogarcia/Automerge.Windows" />
+    <readme>README.md</readme>
+    <description>Windows Runtime (WinRT) projection for the Automerge CRDT library.
+Exposes Document and SyncState as first-class WinRT types, consumable from
+WinUI 3, Windows App SDK, C++/WinRT, or any WinRT-capable language.
+Contains pre-built native binaries for win-x64 and win-arm64.
+CsWinRT (Microsoft.Windows.CsWinRT) auto-generates C# projections at build time.</description>
+    <tags>automerge crdt sync collaborative windows winrt winui cswinrt</tags>
+    <dependencies>
+      <!--
+        CsWinRT is required in the consuming project to generate C# projections
+        from the included .winmd at build time.
+      -->
+      <group targetFramework="net9.0-windows10.0.19041.0">
+        <dependency id="Microsoft.Windows.CsWinRT" version="2.0.0" />
+      </group>
+    </dependencies>
+  </metadata>
+  <files>
+    <!-- WinMD: type library; CsWinRT reads this to auto-generate C# projections -->
+    <file src="Automerge.Windows.winmd"     target="lib\uap10.0\Automerge.Windows.winmd" />
+
+    <!-- x64 native binaries (WinRT component DLL + Rust core DLL) -->
+    <file src="x64\Automerge.Windows.dll"   target="runtimes\win-x64\native\Automerge.Windows.dll" />
+    <file src="x64\automerge_core.dll"      target="runtimes\win-x64\native\automerge_core.dll" />
+
+    <!-- arm64 native binaries -->
+    <file src="arm64\Automerge.Windows.dll" target="runtimes\win-arm64\native\Automerge.Windows.dll" />
+    <file src="arm64\automerge_core.dll"    target="runtimes\win-arm64\native\automerge_core.dll" />
+
+    <!--
+      MSBuild props: automatically imported by NuGet into the consuming project.
+      Declares CsWinRTInputs so the .winmd is projected to C# at build time.
+    -->
+    <file src="build\Automerge.Windows.WinRT.props"
+          target="build\Automerge.Windows.WinRT.props" />
+
+    <file src="README.md" target="README.md" />
+  </files>
+</package>

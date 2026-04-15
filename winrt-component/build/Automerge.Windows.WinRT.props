@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Automerge.Windows.WinRT.props
+  Automatically imported by NuGet into any project that references the
+  Automerge.Windows.WinRT package.
+
+  Declares CsWinRTInputs so that Microsoft.Windows.CsWinRT generates
+  C# projections from the packaged .winmd at build time.
+  The consumer project must also reference Microsoft.Windows.CsWinRT
+  (it is declared as a NuGet dependency, so it installs automatically).
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CsWinRTInputs
+      Include="$(MSBuildThisFileDirectory)..\lib\uap10.0\Automerge.Windows.winmd" />
+  </ItemGroup>
+</Project>

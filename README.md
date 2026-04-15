@@ -61,7 +61,15 @@ Values are returned as JSON strings: strings are quoted (`"Alice"`), numbers are
 
 Target: **.NET 9+** console, ASP.NET, or desktop apps that don't require WinRT activation.
 
-**NuGet / project reference:** Add `csharp-wrapper/AutomergeWindows.csproj` to your solution, or copy the built `AutomergeWindows.dll` and `automerge_core.dll` to your output directory.
+**NuGet (recommended):**
+
+```xml
+<PackageReference Include="Automerge.Windows" Version="*" />
+```
+
+The package bundles `automerge_core.dll` for both `win-x64` and `win-arm64` — no extra steps needed.
+
+**Manual reference:** copy `AutomergeWindows.dll` and `automerge_core.dll` next to your executable.
 
 ### Basic read / write
 
@@ -189,14 +197,23 @@ All failures throw `AutomergeNativeException`. Common causes:
 
 Target: **WinUI 3 / Windows App SDK** apps, or any language with WinRT projection support (C#, C++/WinRT, Rust/WinRT).
 
-**Reference:** Add `Automerge.Windows.winmd` and `Automerge.Windows.dll` to your project. For C#, also add the `Microsoft.Windows.CsWinRT` NuGet package and set:
+**NuGet (recommended):**
+
+```xml
+<PackageReference Include="Automerge.Windows.WinRT" Version="*" />
+```
+
+`Microsoft.Windows.CsWinRT` is pulled in automatically as a dependency. The included `Automerge.Windows.WinRT.props` file wires up `CsWinRTInputs` so C# projections are generated at build time — no manual configuration needed.
+The package bundles `Automerge.Windows.dll` + `automerge_core.dll` for `win-x64` and `win-arm64`.
+
+**Manual reference:** add `Automerge.Windows.winmd` and `Automerge.Windows.dll` to your project, then add `Microsoft.Windows.CsWinRT` and set:
 
 ```xml
 <CsWinRTInputs Include="path\to\Automerge.Windows.winmd" />
 <CsWinRTIncludes>Automerge.Windows</CsWinRTIncludes>
 ```
 
-Binary data (`Ibuffer`) is exchanged via `Windows.Storage.Streams.IBuffer`. Use `DataWriter` / `DataReader` to convert to/from `byte[]`.
+Binary data (`IBuffer`) is exchanged via `Windows.Storage.Streams.IBuffer`. Use `DataWriter` / `DataReader` to convert to/from `byte[]`.
 
 ### Basic read / write
 
@@ -270,6 +287,24 @@ Errors from the native layer are surfaced as `COMException` (HRESULT `E_FAIL`). 
 ## Usage — C++ RAII wrapper
 
 Target: Native C++17/20 applications. Link `automerge_wrapper.lib` and put `automerge_core.dll` next to the executable.
+
+**vcpkg (overlay port):**
+
+```powershell
+# Clone this repo somewhere, then:
+vcpkg install automerge-windows --overlay-ports=<path-to-repo>/ports
+```
+
+Then in your `CMakeLists.txt`:
+
+```cmake
+find_package(automerge-windows CONFIG REQUIRED)
+target_link_libraries(myapp PRIVATE automerge::wrapper)
+```
+
+`automerge::wrapper` links the C++ wrapper and automatically pulls in `automerge::core` (the DLL import lib). Deploy `automerge_core.dll` with your app.
+
+The port file (`ports/automerge-windows/portfile.cmake`) downloads the pre-built release ZIP; SHAs are updated automatically on each release. See `ports/automerge-windows/usage` for details.
 
 ```cpp
 #include <automerge/Document.hpp>

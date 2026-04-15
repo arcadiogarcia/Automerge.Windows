@@ -58,7 +58,10 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.x'
-
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v2
+        with:
+          nuget-version: 'latest'
       # ── x64 build: all layers + all 128 tests ────────────────────────────────
       - name: Build x64 (all layers + tests)
         run: .\build.ps1 -Profile release -Arch x64
@@ -224,7 +227,42 @@ jobs:
           $nupkg = Get-ChildItem dist/nuget -Filter "*.nupkg" | Select-Object -First 1
           "FILE=dist/nuget/$($nupkg.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── GitHub Release ────────────────────────────────────────────────────────
+      # ── NuGet package: WinRT projection (multi-arch) ─────────────────────
+      - name: Pack WinRT NuGet (multi-arch)
+        id: pkg_nuget_winrt
+        shell: pwsh
+        run: |
+          $v      = '${{ steps.ver.outputs.VERSION }}'
+          $stage  = "dist\winrt-nuget-staging"
+          New-Item -ItemType Directory -Force "$stage\x64"   | Out-Null
+          New-Item -ItemType Directory -Force "$stage\arm64" | Out-Null
+          New-Item -ItemType Directory -Force "$stage\build" | Out-Null
+
+          # WinMD (shared between arches)
+          Copy-Item build-winrt/release/Automerge.Windows.winmd $stage/
+
+          # x64 native binaries
+          Copy-Item build-winrt/release/Automerge.Windows.dll         "$stage\x64\"
+          Copy-Item rust-core/target/release/automerge_core.dll        "$stage\x64\"
+
+          # arm64 native binaries
+          Copy-Item build-winrt-arm64/release/Automerge.Windows.dll                      "$stage\arm64\"
+          Copy-Item rust-core/target/aarch64-pc-windows-msvc/release/automerge_core.dll  "$stage\arm64\"
+
+          # MSBuild props for CsWinRT integration
+          Copy-Item winrt-component/build/Automerge.Windows.WinRT.props "$stage\build\"
+
+          # README
+          Copy-Item README.md $stage/
+
+          nuget pack winrt-component/Automerge.Windows.WinRT.nuspec `
+            -Version $v `
+            -BasePath $stage `
+            -OutputDirectory dist/nuget `
+            -NonInteractive
+
+          $nupkg = Get-ChildItem dist/nuget -Filter "Automerge.Windows.WinRT*.nupkg" | Select-Object -First 1
+          "FILE=dist/nuget/$($nupkg.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append ────────────────────────────────────────────────────────
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -241,7 +279,8 @@ jobs:
             '${{ steps.pkg_csharp_arm64.outputs.FILE }}',
             '${{ steps.pkg_winrt_x64.outputs.FILE }}',
             '${{ steps.pkg_winrt_arm64.outputs.FILE }}',
-            '${{ steps.pkg_nuget.outputs.FILE }}'
+            '${{ steps.pkg_nuget.outputs.FILE }}',
+            '${{ steps.pkg_nuget_winrt.outputs.FILE }}'
           )
 
           $notes = @"
@@ -250,19 +289,28 @@ jobs:
           All 128 tests passing (33 Rust + 39 C++ + 38 C# + 18 WinRT) on x64.
           ARM64 artifacts cross-compiled from x64 host.
 
-          ### Release artifacts
+          ### NuGet packages
+
+          | Package | Description |
+          |---|---|
+          | ``Automerge.Windows.$version.nupkg`` | C# P/Invoke wrapper — win-x64 + win-arm64 native DLLs bundled |
+          | ``Automerge.Windows.WinRT.$version.nupkg`` | WinRT projection — win-x64 + win-arm64 + CsWinRT integration |
+
+          ### Release artifacts (individual ZIPs)
 
           | File | Arch | Contents | Use when |
           |---|---|---|---|
           | ``automerge-core-x64-$version.zip`` | x64 | ``automerge_core.dll``, import lib, ``automerge_core.h`` | C FFI — x64 |
           | ``automerge-core-arm64-$version.zip`` | arm64 | ``automerge_core.dll``, import lib, ``automerge_core.h`` | C FFI — arm64 |
-          | ``automerge-cpp-x64-$version.zip`` | x64 | ``automerge_wrapper.lib``, headers, ``automerge_core.dll`` | Native C++ — x64 |
-          | ``automerge-cpp-arm64-$version.zip`` | arm64 | ``automerge_wrapper.lib``, headers, ``automerge_core.dll`` | Native C++ — arm64 |
+          | ``automerge-cpp-x64-$version.zip`` | x64 | ``automerge_wrapper.lib``, headers, ``automerge_core.dll`` | Native C++ / vcpkg — x64 |
+          | ``automerge-cpp-arm64-$version.zip`` | arm64 | ``automerge_wrapper.lib``, headers, ``automerge_core.dll`` | Native C++ / vcpkg — arm64 |
           | ``automerge-csharp-x64-$version.zip`` | x64 | ``AutomergeWindows.dll``, ``automerge_core.dll`` | .NET 9+ apps — x64 |
           | ``automerge-csharp-arm64-$version.zip`` | arm64 | ``AutomergeWindows.dll``, ``automerge_core.dll`` | .NET 9+ apps — arm64 |
           | ``automerge-winrt-x64-$version.zip`` | x64 | ``Automerge.Windows.dll``, ``.winmd``, ``automerge_core.dll`` | WinUI 3 — x64 |
           | ``automerge-winrt-arm64-$version.zip`` | arm64 | ``Automerge.Windows.dll``, ``.winmd``, ``automerge_core.dll`` | WinUI 3 — arm64 |
-          | ``Automerge.Windows.$version.nupkg`` | both | NuGet with win-x64 + win-arm64 native DLLs bundled | NuGet consumers |
+
+          ### vcpkg (C++ overlay port)
+          See ``ports/automerge-windows/`` in the repo. The portfile is updated with correct SHAs after each release.
 
           See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) for full usage instructions per layer.
           "@
@@ -271,3 +319,54 @@ jobs:
             --title "Automerge.Windows $version" `
             --notes $notes `
             @files
+
+      # ── Publish NuGet packages to nuget.org ─────────────────────────────
+      # Requires NUGET_API_KEY secret: repo Settings → Secrets → Actions.
+      # Get your API key from https://www.nuget.org/account/apikeys
+      - name: Publish NuGet packages to nuget.org
+        if: ${{ secrets.NUGET_API_KEY != '' }}
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        shell: pwsh
+        run: |
+          $source = "https://api.nuget.org/v3/index.json"
+          # C# P/Invoke wrapper
+          dotnet nuget push '${{ steps.pkg_nuget.outputs.FILE }}' `
+            --api-key $env:NUGET_API_KEY `
+            --source $source `
+            --skip-duplicate
+          # WinRT projection
+          dotnet nuget push '${{ steps.pkg_nuget_winrt.outputs.FILE }}' `
+            --api-key $env:NUGET_API_KEY `
+            --source $source `
+            --skip-duplicate
+
+      # ── Update vcpkg portfile SHAs and commit back to master ─────────────
+      - name: Update vcpkg portfile with release SHAs
+        shell: pwsh
+        run: |
+          $v       = '${{ steps.ver.outputs.VERSION }}'
+          $x64Zip  = "dist\automerge-cpp-x64-$v.zip"
+          $a64Zip  = "dist\automerge-cpp-arm64-$v.zip"
+
+          $shaX64  = (Get-FileHash $x64Zip  -Algorithm SHA512).Hash.ToLower()
+          $shaA64  = (Get-FileHash $a64Zip  -Algorithm SHA512).Hash.ToLower()
+
+          $pf = Get-Content "ports/automerge-windows/portfile.cmake" -Raw
+          $pf = $pf -replace 'PLACEHOLDER_SHA512_X64_UPDATED_BY_RELEASE_WORKFLOW',   $shaX64
+          $pf = $pf -replace 'PLACEHOLDER_SHA512_ARM64_UPDATED_BY_RELEASE_WORKFLOW',  $shaA64
+          $pf = $pf -replace '(?<=set\(AUTOMERGE_VERSION ")([^"]+)(?="\))',           $v
+          Set-Content "ports/automerge-windows/portfile.cmake" $pf
+
+          # Update version in vcpkg.json
+          $json = Get-Content "ports/automerge-windows/vcpkg.json" | ConvertFrom-Json
+          $json.version = $v
+          $json | ConvertTo-Json -Depth 5 | Set-Content "ports/automerge-windows/vcpkg.json"
+
+          # Commit back to master so consumers always have working SHAs
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name  "github-actions[bot]"
+          git add ports/automerge-windows/portfile.cmake ports/automerge-windows/vcpkg.json
+          git diff --staged --quiet && exit 0  # nothing to commit
+          git commit -m "chore: update vcpkg port to v$v [skip ci]"
+          git push origin HEAD:master

@@ -1,0 +1,16 @@
+automerge-windows is a pre-built binary overlay port.
+
+CMake integration:
+
+    find_package(automerge-windows CONFIG REQUIRED)
+    target_link_libraries(my_app PRIVATE automerge::wrapper)
+
+Provided targets:
+    automerge::wrapper  — C++ wrapper static lib + headers
+    automerge::core     — Rust native DLL (automerge_core.dll)
+
+Note: automerge_core.dll must be deployed alongside your executable.
+      With the vcpkg + CMake toolchain integration this is handled automatically.
+
+Installing (overlay port):
+    vcpkg install automerge-windows --overlay-ports=<repo-root>/ports
