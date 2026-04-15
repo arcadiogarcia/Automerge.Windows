@@ -40,6 +40,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable-x86_64-pc-windows-msvc
+          targets: aarch64-pc-windows-msvc
 
       - name: Cache Cargo
         uses: actions/cache@v4
@@ -58,30 +59,33 @@ jobs:
         with:
           dotnet-version: '9.x'
 
-      # ── Full build + all 128 tests ────────────────────────────────────────────
-      - name: Build all layers and run tests
-        run: .\build.ps1 -Profile release
+      # ── x64 build: all layers + all 128 tests ────────────────────────────────
+      - name: Build x64 (all layers + tests)
+        run: .\build.ps1 -Profile release -Arch x64
 
-      - name: Run WinRT projection tests
+      - name: Run WinRT projection tests (x64)
         run: |
           dotnet test tests/winrt/AutomergeWinRTTests.csproj `
             -p:Platform=x64 -p:RuntimeIdentifier=win-x64 `
             --logger "console;verbosity=normal"
 
+      # ── ARM64 build: cross-compile all layers, no test execution ─────────────
+      - name: Build ARM64 (cross-compile)
+        run: .\build.ps1 -Profile release -Arch arm64
+
       # ── Build release-mode C# wrapper DLL ─────────────────────────────────────
       - name: Build C# wrapper (Release config)
         run: |
           dotnet build csharp-wrapper/AutomergeWindows.csproj `
-            -c Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64
+            -c Release -p:RuntimeIdentifier=win-x64
 
-      # ── Package: C ABI ────────────────────────────────────────────────────────
-      # automerge_core.dll  automerge_core.dll.lib  automerge_core.h
-      - name: Package C ABI
-        id: pkg_cabi
+      # ── Package: C ABI (x64) ──────────────────────────────────────────────────
+      - name: Package C ABI (x64)
+        id: pkg_cabi_x64
         shell: pwsh
         run: |
           $v   = '${{ steps.ver.outputs.VERSION }}'
-          $dir = "dist\cabi"
+          $dir = "dist\cabi-x64"
           New-Item -ItemType Directory -Force $dir | Out-Null
           Copy-Item rust-core/target/release/automerge_core.dll     $dir/
           Copy-Item rust-core/target/release/automerge_core.dll.lib $dir/
@@ -90,14 +94,28 @@ jobs:
           Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
           "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── Package: C++ wrapper ──────────────────────────────────────────────────
-      # automerge_wrapper.lib  automerge_core.dll(.lib)  include/ headers
-      - name: Package C++ wrapper
-        id: pkg_cpp
+      # ── Package: C ABI (arm64) ────────────────────────────────────────────────
+      - name: Package C ABI (arm64)
+        id: pkg_cabi_arm64
         shell: pwsh
         run: |
           $v   = '${{ steps.ver.outputs.VERSION }}'
-          $dir = "dist\cpp"
+          $dir = "dist\cabi-arm64"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Copy-Item rust-core/target/aarch64-pc-windows-msvc/release/automerge_core.dll     $dir/
+          Copy-Item rust-core/target/aarch64-pc-windows-msvc/release/automerge_core.dll.lib $dir/
+          Copy-Item rust-core/include/automerge_core.h                                       $dir/
+          $zip = "dist\automerge-core-arm64-$v.zip"
+          Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
+          "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # ── Package: C++ wrapper (x64) ───────────────────────────────────────────
+      - name: Package C++ wrapper (x64)
+        id: pkg_cpp_x64
+        shell: pwsh
+        run: |
+          $v   = '${{ steps.ver.outputs.VERSION }}'
+          $dir = "dist\cpp-x64"
           New-Item -ItemType Directory -Force "$dir\include" | Out-Null
           Copy-Item rust-core/target/release/automerge_core.dll     $dir/
           Copy-Item rust-core/target/release/automerge_core.dll.lib $dir/
@@ -108,34 +126,64 @@ jobs:
           Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
           "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── Package: C# P/Invoke wrapper ─────────────────────────────────────────
-      # AutomergeWindows.dll  AutomergeWindows.xml (docs)  automerge_core.dll
-      - name: Package C# P/Invoke wrapper
-        id: pkg_csharp
+      # ── Package: C++ wrapper (arm64) ─────────────────────────────────────────
+      - name: Package C++ wrapper (arm64)
+        id: pkg_cpp_arm64
         shell: pwsh
         run: |
           $v   = '${{ steps.ver.outputs.VERSION }}'
-          $dir = "dist\csharp"
+          $dir = "dist\cpp-arm64"
+          New-Item -ItemType Directory -Force "$dir\include" | Out-Null
+          Copy-Item rust-core/target/aarch64-pc-windows-msvc/release/automerge_core.dll     $dir/
+          Copy-Item rust-core/target/aarch64-pc-windows-msvc/release/automerge_core.dll.lib $dir/
+          Copy-Item build-arm64/automerge_wrapper.lib                                        $dir/
+          Copy-Item rust-core/include/automerge_core.h                                       "$dir\include\"
+          Copy-Item -Recurse cpp-wrapper/include/automerge                                   "$dir\include\automerge"
+          $zip = "dist\automerge-cpp-arm64-$v.zip"
+          Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
+          "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # ── Package: C# P/Invoke wrapper (x64) ───────────────────────────────────
+      - name: Package C# P/Invoke wrapper (x64)
+        id: pkg_csharp_x64
+        shell: pwsh
+        run: |
+          $v   = '${{ steps.ver.outputs.VERSION }}'
+          $dir = "dist\csharp-x64"
           New-Item -ItemType Directory -Force $dir | Out-Null
-          $dllSrc = Get-ChildItem "csharp-wrapper/bin/x64/Release" -Recurse -Filter "AutomergeWindows.dll" |
-                    Select-Object -First 1
+          $dllSrc = Get-ChildItem "csharp-wrapper/bin" -Recurse -Filter "AutomergeWindows.dll" | Select-Object -First 1
           Copy-Item $dllSrc.FullName $dir/
-          $xmlSrc = Get-ChildItem "csharp-wrapper/bin/x64/Release" -Recurse -Filter "AutomergeWindows.xml" |
-                    Select-Object -First 1
+          $xmlSrc = Get-ChildItem "csharp-wrapper/bin" -Recurse -Filter "AutomergeWindows.xml" | Select-Object -First 1
           if ($xmlSrc) { Copy-Item $xmlSrc.FullName $dir/ }
           Copy-Item rust-core/target/release/automerge_core.dll $dir/
           $zip = "dist\automerge-csharp-x64-$v.zip"
           Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
           "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── Package: WinRT projection ─────────────────────────────────────────────
-      # Automerge.Windows.dll  Automerge.Windows.winmd  automerge_core.dll
-      - name: Package WinRT projection
-        id: pkg_winrt
+      # ── Package: C# P/Invoke wrapper (arm64) ─────────────────────────────────
+      - name: Package C# P/Invoke wrapper (arm64)
+        id: pkg_csharp_arm64
         shell: pwsh
         run: |
           $v   = '${{ steps.ver.outputs.VERSION }}'
-          $dir = "dist\winrt"
+          $dir = "dist\csharp-arm64"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $dllSrc = Get-ChildItem "csharp-wrapper/bin" -Recurse -Filter "AutomergeWindows.dll" | Select-Object -First 1
+          Copy-Item $dllSrc.FullName $dir/
+          $xmlSrc = Get-ChildItem "csharp-wrapper/bin" -Recurse -Filter "AutomergeWindows.xml" | Select-Object -First 1
+          if ($xmlSrc) { Copy-Item $xmlSrc.FullName $dir/ }
+          Copy-Item rust-core/target/aarch64-pc-windows-msvc/release/automerge_core.dll $dir/
+          $zip = "dist\automerge-csharp-arm64-$v.zip"
+          Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
+          "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # ── Package: WinRT projection (x64) ──────────────────────────────────────
+      - name: Package WinRT projection (x64)
+        id: pkg_winrt_x64
+        shell: pwsh
+        run: |
+          $v   = '${{ steps.ver.outputs.VERSION }}'
+          $dir = "dist\winrt-x64"
           New-Item -ItemType Directory -Force $dir | Out-Null
           Copy-Item build-winrt/release/Automerge.Windows.dll  $dir/
           Copy-Item build-winrt/release/Automerge.Windows.winmd $dir/
@@ -144,21 +192,34 @@ jobs:
           Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
           "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── NuGet package (C# P/Invoke wrapper) ───────────────────────────────────
-      # runtimes/win-x64/native/automerge_core.dll packaged alongside the
-      # managed DLL so consumers only need to add the NuGet reference.
-      - name: Pack NuGet package
+      # ── Package: WinRT projection (arm64) ────────────────────────────────────
+      - name: Package WinRT projection (arm64)
+        id: pkg_winrt_arm64
+        shell: pwsh
+        run: |
+          $v   = '${{ steps.ver.outputs.VERSION }}'
+          $dir = "dist\winrt-arm64"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Copy-Item build-winrt-arm64/release/Automerge.Windows.dll  $dir/
+          Copy-Item build-winrt-arm64/release/Automerge.Windows.winmd $dir/
+          Copy-Item rust-core/target/aarch64-pc-windows-msvc/release/automerge_core.dll $dir/
+          $zip = "dist\automerge-winrt-arm64-$v.zip"
+          Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
+          "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # ── NuGet package: fat multi-arch (win-x64 + win-arm64 native DLLs) ───────
+      - name: Pack NuGet package (multi-arch)
         id: pkg_nuget
         shell: pwsh
         run: |
-          $v       = '${{ steps.ver.outputs.VERSION }}'
-          $nativePath = (Resolve-Path "rust-core/target/release").Path
+          $v           = '${{ steps.ver.outputs.VERSION }}'
+          $nativeX64   = (Resolve-Path "rust-core/target/release").Path
+          $nativeArm64 = (Resolve-Path "rust-core/target/aarch64-pc-windows-msvc/release").Path
           dotnet pack csharp-wrapper/AutomergeWindows.csproj `
             -c Release `
-            -p:Platform=x64 `
-            -p:RuntimeIdentifier=win-x64 `
             -p:PackageVersion=$v `
-            -p:NativeDllPath=$nativePath `
+            -p:NativeDllPathX64=$nativeX64 `
+            -p:NativeDllPathArm64=$nativeArm64 `
             -o dist/nuget
           $nupkg = Get-ChildItem dist/nuget -Filter "*.nupkg" | Select-Object -First 1
           "FILE=dist/nuget/$($nupkg.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
@@ -172,27 +233,36 @@ jobs:
           $tag     = '${{ steps.ver.outputs.TAG }}'
           $version = '${{ steps.ver.outputs.VERSION }}'
           $files   = @(
-            '${{ steps.pkg_cabi.outputs.FILE }}',
-            '${{ steps.pkg_cpp.outputs.FILE }}',
-            '${{ steps.pkg_csharp.outputs.FILE }}',
-            '${{ steps.pkg_winrt.outputs.FILE }}',
+            '${{ steps.pkg_cabi_x64.outputs.FILE }}',
+            '${{ steps.pkg_cabi_arm64.outputs.FILE }}',
+            '${{ steps.pkg_cpp_x64.outputs.FILE }}',
+            '${{ steps.pkg_cpp_arm64.outputs.FILE }}',
+            '${{ steps.pkg_csharp_x64.outputs.FILE }}',
+            '${{ steps.pkg_csharp_arm64.outputs.FILE }}',
+            '${{ steps.pkg_winrt_x64.outputs.FILE }}',
+            '${{ steps.pkg_winrt_arm64.outputs.FILE }}',
             '${{ steps.pkg_nuget.outputs.FILE }}'
           )
 
           $notes = @"
           ## Automerge.Windows $version
 
-          All 128 tests passing (33 Rust + 39 C++ + 38 C# + 18 WinRT).
+          All 128 tests passing (33 Rust + 39 C++ + 38 C# + 18 WinRT) on x64.
+          ARM64 artifacts cross-compiled from x64 host.
 
           ### Release artifacts
 
-          | File | Contents | Use when |
-          |---|---|---|
-          | ``automerge-core-x64-$version.zip`` | ``automerge_core.dll``, import lib, ``automerge_core.h`` | C FFI (any language) |
-          | ``automerge-cpp-x64-$version.zip`` | ``automerge_wrapper.lib``, all headers, ``automerge_core.dll`` | Native C++ |
-          | ``automerge-csharp-x64-$version.zip`` | ``AutomergeWindows.dll``, ``automerge_core.dll`` | .NET 9+ apps |
-          | ``automerge-winrt-x64-$version.zip`` | ``Automerge.Windows.dll``, ``.winmd``, ``automerge_core.dll`` | WinUI 3 / Windows App SDK |
-          | ``Automerge.Windows.$version.nupkg`` | NuGet package with native DLL bundled | NuGet consumers |
+          | File | Arch | Contents | Use when |
+          |---|---|---|---|
+          | ``automerge-core-x64-$version.zip`` | x64 | ``automerge_core.dll``, import lib, ``automerge_core.h`` | C FFI — x64 |
+          | ``automerge-core-arm64-$version.zip`` | arm64 | ``automerge_core.dll``, import lib, ``automerge_core.h`` | C FFI — arm64 |
+          | ``automerge-cpp-x64-$version.zip`` | x64 | ``automerge_wrapper.lib``, headers, ``automerge_core.dll`` | Native C++ — x64 |
+          | ``automerge-cpp-arm64-$version.zip`` | arm64 | ``automerge_wrapper.lib``, headers, ``automerge_core.dll`` | Native C++ — arm64 |
+          | ``automerge-csharp-x64-$version.zip`` | x64 | ``AutomergeWindows.dll``, ``automerge_core.dll`` | .NET 9+ apps — x64 |
+          | ``automerge-csharp-arm64-$version.zip`` | arm64 | ``AutomergeWindows.dll``, ``automerge_core.dll`` | .NET 9+ apps — arm64 |
+          | ``automerge-winrt-x64-$version.zip`` | x64 | ``Automerge.Windows.dll``, ``.winmd``, ``automerge_core.dll`` | WinUI 3 — x64 |
+          | ``automerge-winrt-arm64-$version.zip`` | arm64 | ``Automerge.Windows.dll``, ``.winmd``, ``automerge_core.dll`` | WinUI 3 — arm64 |
+          | ``Automerge.Windows.$version.nupkg`` | both | NuGet with win-x64 + win-arm64 native DLLs bundled | NuGet consumers |
 
           See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) for full usage instructions per layer.
           "@

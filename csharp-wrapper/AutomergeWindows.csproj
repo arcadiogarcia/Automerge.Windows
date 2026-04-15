@@ -33,15 +33,31 @@
   </PropertyGroup>
 
   <!--
-    Include automerge_core.dll in the NuGet package under runtimes/win-x64/native/.
-    Set NativeDllPath when packing, e.g.:
-      dotnet pack -p:NativeDllPath=<abs-path-to-rust-target-release>
+    Include automerge_core.dll in the NuGet package under runtimes/<rid>/native/.
+    Pass one or both path parameters when packing, e.g.:
+      dotnet pack -p:NativeDllPathX64=<abs-path-x64> -p:NativeDllPathArm64=<abs-path-arm64>
+    Kept backward-compatible: NativeDllPath (no suffix) still maps to win-x64.
   -->
-  <ItemGroup Condition="'$(NativeDllPath)' != ''">
+  <ItemGroup Condition="'$(NativeDllPathX64)' != ''">
+    <None Include="$(NativeDllPathX64)\automerge_core.dll"
+          Condition="Exists('$(NativeDllPathX64)\automerge_core.dll')">
+      <Pack>true</Pack>
+      <PackagePath>runtimes/win-x64/native/</PackagePath>
+    </None>
+  </ItemGroup>
+  <!-- Backward-compat: old NativeDllPath param → win-x64 -->
+  <ItemGroup Condition="'$(NativeDllPath)' != '' and '$(NativeDllPathX64)' == ''">
     <None Include="$(NativeDllPath)\automerge_core.dll"
           Condition="Exists('$(NativeDllPath)\automerge_core.dll')">
       <Pack>true</Pack>
       <PackagePath>runtimes/win-x64/native/</PackagePath>
+    </None>
+  </ItemGroup>
+  <ItemGroup Condition="'$(NativeDllPathArm64)' != ''">
+    <None Include="$(NativeDllPathArm64)\automerge_core.dll"
+          Condition="Exists('$(NativeDllPathArm64)\automerge_core.dll')">
+      <Pack>true</Pack>
+      <PackagePath>runtimes/win-arm64/native/</PackagePath>
     </None>
   </ItemGroup>
 

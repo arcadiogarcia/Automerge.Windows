@@ -2,3 +2,9 @@
 # x86_64-pc-windows-msvc — uses the standard MSVC linker (link.exe from VS).
 # No custom linker needed; link.exe is found automatically via PATH when
 # vcvarsall.bat has been sourced or the VS Developer environment is active.
+
+# ARM64 cross-compilation: when building with --target aarch64-pc-windows-msvc
+# from an x64 host, ensure the MSVC x64_arm64 cross-tools are active first
+# (i.e. call vcvarsall.bat x64_arm64 before invoking cargo).  The ARM64
+# link.exe from HostX64\arm64\ will then be found automatically on PATH.
+# No custom linker entry needed here.

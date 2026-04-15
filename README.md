@@ -1,7 +1,7 @@
 # Automerge.Windows
 
 Native Windows bindings for the [Automerge](https://github.com/automerge/automerge)
-CRDT library. Zero WebView, zero JavaScript runtime — pure native x64 Windows.
+CRDT library. Zero WebView, zero JavaScript runtime — pure native Windows (x64 + ARM64).
 
 ---
 

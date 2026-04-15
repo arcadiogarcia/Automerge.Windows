@@ -8,6 +8,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(AUTOMERGE_BUILD_TESTS "Build C++ tests" ON)
 set(AUTOMERGE_RUST_PROFILE "release" CACHE STRING "Cargo build profile: debug|release")
+# Architecture: "x64" (default) or "arm64" (cross-compile from x64 host).
+# When arm64 is selected the Rust DLL is built for aarch64-pc-windows-msvc and
+# tests are disabled (ARM64 binaries cannot run on an x64 host).
+set(AUTOMERGE_TARGET_ARCH "x64" CACHE STRING "Target architecture: x64 or arm64")
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 
@@ -22,18 +26,28 @@ find_program(CARGO_EXE cargo
     REQUIRED
 )
 
-# Determine cargo build flags
+# Determine cargo build flags and output directory
 if(AUTOMERGE_RUST_PROFILE STREQUAL "release")
     set(CARGO_FLAGS --release)
 else()
     set(CARGO_FLAGS "")
 endif()
 
-# MSVC x64 toolchain output directory (default target for pinned toolchain)
-set(RUST_OUT_DIR "${RUST_CORE_DIR}/target/${AUTOMERGE_RUST_PROFILE}")
-set(AUTOMERGE_CORE_DLL "${RUST_OUT_DIR}/automerge_core.dll")
-# MSVC-style import library (produced by x86_64-pc-windows-msvc toolchain)
-set(AUTOMERGE_CORE_IMPLIB "${RUST_OUT_DIR}/automerge_core.dll.lib")
+if(AUTOMERGE_TARGET_ARCH STREQUAL "arm64")
+    set(RUST_TARGET "aarch64-pc-windows-msvc")
+    list(APPEND CARGO_FLAGS --target ${RUST_TARGET})
+    set(RUST_OUT_DIR "${RUST_CORE_DIR}/target/${RUST_TARGET}/${AUTOMERGE_RUST_PROFILE}")
+    # ARM64 binaries can't run on the x64 build host; disable tests
+    set(AUTOMERGE_BUILD_TESTS OFF)
+    message(STATUS "ARM64 cross-compilation: tests disabled (cannot run on host)")
+else()
+    set(RUST_TARGET "x86_64-pc-windows-msvc")
+    set(RUST_OUT_DIR "${RUST_CORE_DIR}/target/${AUTOMERGE_RUST_PROFILE}")
+endif()
+
+set(AUTOMERGE_CORE_DLL     "${RUST_OUT_DIR}/automerge_core.dll")
+# MSVC-style import library (produced by the msvc toolchain)
+set(AUTOMERGE_CORE_IMPLIB  "${RUST_OUT_DIR}/automerge_core.dll.lib")
 
 # Custom command to build the Rust crate
 add_custom_command(

@@ -16,14 +16,18 @@
 param(
     [ValidateSet("debug","release")]
     [string]$Profile = "release",
-    [string]$VSPath  = ""
+    [string]$VSPath  = "",
+    [ValidateSet("x64","arm64")]
+    [string]$Arch    = "x64"
 )
 
 $ErrorActionPreference = "Stop"
 
 $root    = Split-Path $PSScriptRoot -Parent
 $srcDir  = $PSScriptRoot
-$outDir  = "$root\build-winrt\$Profile"
+# Architecture-specific output directory: build-winrt/release or build-winrt-arm64/release
+$outBase = if ($Arch -eq "arm64") { "$root\build-winrt-arm64" } else { "$root\build-winrt" }
+$outDir  = "$outBase\$Profile"
 $intDir  = "$outDir\int"
 $genDir  = "$intDir\generated"
 
@@ -65,7 +69,9 @@ if (-not $VSPath) { throw "No Visual Studio installation with vcvarsall.bat foun
 
 $vcvarsAll = "$VSPath\VC\Auxiliary\Build\vcvarsall.bat"
 Write-Host "Sourcing MSVC env from: $vcvarsAll" -ForegroundColor Gray
-$envDump = cmd /c "`"$vcvarsAll`" x64 > NUL 2>&1 && set"
+# x64_arm64 sets up the ARM64 cross-compiler/linker in PATH (HostX64\arm64\)
+$vcArgs = if ($Arch -eq "arm64") { "x64_arm64" } else { "x64" }
+$envDump = cmd /c "`"$vcvarsAll`" $vcArgs > NUL 2>&1 && set"
 foreach ($line in $envDump) {
     if ($line -match "^([^=]+)=(.*)$") {
         [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2])
@@ -77,11 +83,14 @@ foreach ($line in $envDump) {
 
 $msvcToolsBase = "$VSPath\VC\Tools\MSVC"
 $msvcVer = Get-ChildItem $msvcToolsBase | Sort-Object Name | Select-Object -Last 1 -ExpandProperty Name
-$msvcBin = "$msvcToolsBase\$msvcVer\bin\Hostx64\x64"
-$msvcLib = if (Test-Path "$msvcToolsBase\$msvcVer\lib\x64\msvcrt.lib") {
-    "$msvcToolsBase\$msvcVer\lib\x64"
+# x64 host → x64 output: HostX64\x64\cl.exe
+# x64 host → arm64 output (cross): HostX64\arm64\cl.exe
+$msvcHostTarget = if ($Arch -eq "arm64") { "arm64" } else { "x64" }
+$msvcBin = "$msvcToolsBase\$msvcVer\bin\Hostx64\$msvcHostTarget"
+$msvcLib = if (Test-Path "$msvcToolsBase\$msvcVer\lib\$msvcHostTarget\msvcrt.lib") {
+    "$msvcToolsBase\$msvcVer\lib\$msvcHostTarget"
 } else {
-    "$msvcToolsBase\$msvcVer\lib\onecore\x64"
+    "$msvcToolsBase\$msvcVer\lib\onecore\$msvcHostTarget"
 }
 $msvcInc = "$msvcToolsBase\$msvcVer\include"
 
@@ -115,8 +124,10 @@ $sdkIncUm     = "$sdkRoot\Include\$sdkVer\um"
 $sdkIncShared = "$sdkRoot\Include\$sdkVer\shared"
 $sdkIncUcrt   = "$sdkRoot\Include\$sdkVer\ucrt"
 $sdkRef       = "$sdkRoot\UnionMetadata\$sdkVer"  # Contains Windows.winmd
-$sdkLibUm     = "$sdkRoot\Lib\$sdkVer\um\x64"
-$sdkLibUcrt   = "$sdkRoot\Lib\$sdkVer\ucrt\x64"
+# SDK libs: pick arm64 or x64 depending on target
+$sdkLibArch   = if ($Arch -eq "arm64") { "arm64" } else { "x64" }
+$sdkLibUm     = "$sdkRoot\Lib\$sdkVer\um\$sdkLibArch"
+$sdkLibUcrt   = "$sdkRoot\Lib\$sdkVer\ucrt\$sdkLibArch"
 
 $midl     = "$sdkBin\midl.exe"
 $cppwinrt = "$sdkBin\cppwinrt.exe"
@@ -131,8 +142,13 @@ Write-Host "SDK $sdkVer   MSVC $msvcVer" -ForegroundColor Gray
 # ─── Input paths ──────────────────────────────────────────────────────────────
 
 $cargoProfile = if ($Profile -eq "release") { "release" } else { "debug" }
-$rustOutDir   = "$root\rust-core\target\$cargoProfile"
-$cppBuildDir  = "$root\build"
+# ARM64 cargo output is under target/aarch64-pc-windows-msvc/<profile>/
+$rustOutDir   = if ($Arch -eq "arm64") {
+    "$root\rust-core\target\aarch64-pc-windows-msvc\$cargoProfile"
+} else {
+    "$root\rust-core\target\$cargoProfile"
+}
+$cppBuildDir  = if ($Arch -eq "arm64") { "$root\build-arm64" } else { "$root\build" }
 
 # Try both MSVC (.dll.lib) and MinGW (.dll.a) import library names
 $coreImportLib = if (Test-Path "$rustOutDir\automerge_core.dll.lib") {
@@ -163,7 +179,8 @@ Write-Host "C++ wrapper lib : $wrapperLib"     -ForegroundColor Gray
 
 Write-Host "`nStep 1: MIDL -> Automerge.Windows.winmd" -ForegroundColor Cyan
 
-& $midl /W1 /WX /char signed /env x64 /nologo /error all `
+$midlEnv = if ($Arch -eq "arm64") { "arm64" } else { "x64" }
+& $midl /W1 /WX /char signed /env $midlEnv /nologo /error all `
     /winrt `
     /metadata_dir $sdkRef `
     /h  "$intDir\Automerge.Windows_midl.h" `
@@ -221,8 +238,6 @@ $linkLibPaths = @(
     "/LIBPATH:`"$sdkLibUm`"",
     "/LIBPATH:`"$sdkLibUcrt`""
 )
-
-# ─── Step 3 : Compile sources ───────────────────────────────────────────────
 # (No precompiled headers; /Yc//Yu PCH matching is fragile with /FI redirection
 #  and doesn't buy much for a three-file project.)
 
@@ -250,13 +265,15 @@ $objs = @(
     "$intDir\module.g.obj"
 )
 
-$debugFlags = if ($Profile -eq "debug") { @("/DEBUG") } else { @() }
+$debugFlags  = if ($Profile -eq "debug") { @("/DEBUG") } else { @() }
+$machineFlag = if ($Arch -eq "arm64") { "/MACHINE:ARM64" } else { "/MACHINE:X64" }
 
 # Note: MSVC/SDK lib dirs are already in $env:LIB (set by vcvarsall + our SDKVer
 # override above), so no explicit /LIBPATH: flags are needed.
 # Project paths (wrapperLib, coreImportLib, objs) have no spaces so need no quoting.
 & $link /nologo /DLL /SUBSYSTEM:WINDOWS `
     @debugFlags `
+    $machineFlag `
     /OUT:$outDir\Automerge.Windows.dll `
     /IMPLIB:$outDir\Automerge.Windows.lib `
     @objs `

@@ -6,6 +6,11 @@
 .PARAMETER Profile
     Cargo profile: "debug" or "release" (default: "release").
 
+.PARAMETER Arch
+    Target architecture: "x64" (default), "arm64", or "all".
+    "arm64"/"all" cross-compiles from the x64 host using MSVC x64_arm64 tools.
+    ARM64 test execution is skipped (ARM64 binaries can't run on an x64 host).
+
 .PARAMETER SkipCpp
     Skip C++ CMake build.
 
@@ -21,6 +26,8 @@
 param(
     [ValidateSet("debug", "release")]
     [string]$Profile = "release",
+    [ValidateSet("x64", "arm64", "all")]
+    [string]$Arch = "x64",
     [switch]$SkipCpp,
     [switch]$SkipCsharp,
     [switch]$SkipWinRT,
@@ -42,21 +49,17 @@ function Run {
 # ─── Locate Visual Studio ──────────────────────────────────────────────────────
 
 function Find-VCVarsAll {
-    # Search for vcvarsall.bat across all VS installations, including Build Tools.
-    # VS 2019 Build Tools, VS 2022 Community, VS 2026 Community are all checked.
     $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
     $searchPaths = @(
         # Enterprise/Professional first — matches GitHub Actions windows-2022 runner
         "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat",
         "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvarsall.bat",
-        # Build Tools and Community
         "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvarsall.bat",
         "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat",
         "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat",
         "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvarsall.bat"
     )
     foreach ($p in $searchPaths) { if (Test-Path $p) { return $p } }
-    # Fallback: use vswhere to find any VS with vcvarsall.bat
     if (Test-Path $vswhere) {
         $allPaths = & $vswhere -all -products * -property installationPath 2>$null
         foreach ($vp in $allPaths) {
@@ -73,9 +76,9 @@ if (-not $vcvarsAll) { Err "vcvarsall.bat not found. Ensure VS 2019 Build Tools 
 $vsPath = Split-Path (Split-Path (Split-Path (Split-Path $vcvarsAll)))
 Ok "Using toolchain from: $vsPath"
 
-# Set up MSVC x64 environment variables (equivalent to vcvarsall.bat x64)
-function Setup-VCEnv {
-    $envDump = cmd /c "`"$vcvarsAll`" x64 > NUL 2>&1 && set"
+# Apply a vcvarsall.bat environment to the current process
+function Setup-VCEnv([string]$vcArgs) {
+    $envDump = cmd /c "`"$vcvarsAll`" $vcArgs > NUL 2>&1 && set"
     foreach ($line in $envDump) {
         if ($line -match "^([^=]+)=(.*)$") {
             [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2])
@@ -83,9 +86,6 @@ function Setup-VCEnv {
         }
     }
 }
-
-Setup-VCEnv
-Ok "MSVC x64 environment configured"
 
 # Ensure cargo is in PATH
 if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
@@ -98,67 +98,132 @@ foreach ($p in @("C:\Program Files\CMake\bin")) {
     if (Test-Path $p) { $env:PATH = "$p;" + $env:PATH }
 }
 
-# ─── 1. Rust C ABI ────────────────────────────────────────────────────────────
+$cmakeType = if ($Profile -eq "release") { "Release" } else { "Debug" }
 
-if (-not $TestOnly) {
-    Step "Building Rust C ABI (automerge_core)"
-    Push-Location "$root/rust-core"
-    $cargoArgs = @("build")
-    if ($Profile -eq "release") { $cargoArgs += "--release" }
-    Run "cargo" $cargoArgs
-    Pop-Location
-    Ok "Rust build succeeded"
-}
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: build one architecture
+# ─────────────────────────────────────────────────────────────────────────────
 
-$rustOutDir = "$root/rust-core/target/$Profile"
-$coreDll = "$rustOutDir/automerge_core.dll"
-if (-not (Test-Path $coreDll)) { Err "automerge_core.dll not found at $coreDll" }
-Ok "Found: $coreDll"
-
-# ─── 2. Rust tests ────────────────────────────────────────────────────────────
-
-Step "Running Rust tests"
-Push-Location "$root/rust-core"
-Run "cargo" @("test")
-Pop-Location
-Ok "Rust tests passed"
-
-# ─── 3. C++ wrapper + tests ───────────────────────────────────────────────────
-
-if (-not $SkipCpp) {
-    if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
-        Write-Host "  cmake not found - skipping C++ build." -ForegroundColor Yellow
+function Build-ForArch([string]$arch) {
+    $isArm64   = ($arch -eq "arm64")
+    $vcEnvArg  = if ($isArm64) { "x64_arm64" } else { "x64" }
+    $cargoTarget = if ($isArm64) { "aarch64-pc-windows-msvc" } else { $null }
+    $rustOutDir  = if ($isArm64) {
+        "$root/rust-core/target/aarch64-pc-windows-msvc/$Profile"
     } else {
-        Step "Building C++ wrapper and tests (MSVC x64)"
-        $buildDir = "$root/build"
-        if (-not (Test-Path $buildDir)) { New-Item -ItemType Directory $buildDir | Out-Null }
-        $cmakeType = if ($Profile -eq "release") { "Release" } else { "Debug" }
-        Push-Location $buildDir
-        # Use Ninja + MSVC; no custom toolchain file needed (MSVC auto-detected via vcvarsall)
-        Run "cmake" @("..", "-G", "Ninja", "-DCMAKE_BUILD_TYPE=$cmakeType", "-DAUTOMERGE_BUILD_TESTS=ON")
-        Run "cmake" @("--build", ".")
-        Step "Running C++ tests"
-        Run "ctest" @("--output-on-failure")
+        "$root/rust-core/target/$Profile"
+    }
+    $cppBuildDir = if ($isArm64) { "$root/build-arm64" } else { "$root/build" }
+
+    # ── Set up MSVC environment ─────────────────────────────────────────────
+    Step "Setting up MSVC $vcEnvArg environment"
+    Setup-VCEnv $vcEnvArg
+    Ok "MSVC $vcEnvArg environment configured"
+
+    # For ARM64 cross-compilation Rust selects its linker from VCINSTALLDIR,
+    # which defaults to HostX64\x64\link.exe even after vcvarsall x64_arm64.
+    # Override explicitly with CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER.
+    if ($isArm64) {
+        # VCToolsInstallDir is set by vcvarsall (has a trailing backslash)
+        $arm64Link = "${env:VCToolsInstallDir}bin\HostX64\arm64\link.exe"
+        if (-not (Test-Path $arm64Link)) {
+            # Fallback: derive from vsPath directly
+            $msvcBase = "$vsPath\VC\Tools\MSVC"
+            $msvcVer  = Get-ChildItem $msvcBase -ErrorAction SilentlyContinue |
+                        Sort-Object Name | Select-Object -Last 1 -ExpandProperty Name
+            if ($msvcVer) { $arm64Link = "$msvcBase\$msvcVer\bin\HostX64\arm64\link.exe" }
+        }
+        if (Test-Path $arm64Link) {
+            $env:CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER = $arm64Link
+            Ok "ARM64 linker: $arm64Link"
+        } else {
+            # Last resort: try lld-link (LLVM) which is pre-installed on GitHub Actions runners
+            $lldLink = Get-Command lld-link.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+            if ($lldLink) {
+                $env:CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER = $lldLink
+                Ok "ARM64 linker (lld-link fallback): $lldLink"
+            } else {
+                Err "ARM64 cross-linker not found. Install the 'C++ ARM64 build tools' component in Visual Studio (Modify > Individual components > VC++ 2022 latest ARM64 tools), or install LLVM (winget install LLVM.LLVM)."
+            }
+        }
+    }
+
+    # ── 1. Rust build ──────────────────────────────────────────────────────
+    if (-not $TestOnly) {
+        Step "Building Rust C ABI — $arch"
+        Push-Location "$root/rust-core"
+        $cargoArgs = @("build")
+        if ($Profile -eq "release") { $cargoArgs += "--release" }
+        if ($cargoTarget)           { $cargoArgs += "--target", $cargoTarget }
+        Run "cargo" $cargoArgs
         Pop-Location
-        Ok "C++ tests passed"
+        Ok "Rust $arch build succeeded"
     }
-}
 
-# ─── 4. WinRT component ───────────────────────────────────────────────────────
+    $coreDll = "$rustOutDir/automerge_core.dll"
+    if (-not (Test-Path $coreDll)) { Err "automerge_core.dll not found at $coreDll" }
+    Ok "Found: $coreDll"
 
-if (-not $SkipWinRT) {
-    Step "Building WinRT component (Automerge.Windows.dll + .winmd)"
-    $winrtBuildScript = "$root/winrt-component/build-winrt.ps1"
-    if (Test-Path $winrtBuildScript) {
-        & $winrtBuildScript -Profile $Profile -VSPath $vsPath
-        if ($LASTEXITCODE -ne 0) { Err "WinRT build failed" }
-        Ok "WinRT component built"
+    # ── 2. Rust tests (x64 only — ARM64 binaries can't run on x64 host) ────
+    if (-not $isArm64) {
+        Step "Running Rust tests"
+        Push-Location "$root/rust-core"
+        Run "cargo" @("test")
+        Pop-Location
+        Ok "Rust tests passed"
     } else {
-        Write-Host "  WinRT build script not found — skipping." -ForegroundColor Yellow
+        Write-Host "  Skipping Rust test execution (ARM64 on x64 host)" -ForegroundColor Yellow
+    }
+
+    # ── 3. C++ wrapper ─────────────────────────────────────────────────────
+    if (-not $SkipCpp) {
+        if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
+            Write-Host "  cmake not found — skipping C++ build." -ForegroundColor Yellow
+        } else {
+            Step "Building C++ wrapper — $arch"
+            if (-not (Test-Path $cppBuildDir)) { New-Item -ItemType Directory $cppBuildDir | Out-Null }
+            Push-Location $cppBuildDir
+            $cmakeArch = if ($isArm64) { "arm64" } else { "x64" }
+            Run "cmake" @("..", "-G", "Ninja",
+                "-DCMAKE_BUILD_TYPE=$cmakeType",
+                "-DAUTOMERGE_BUILD_TESTS=$(if($isArm64){'OFF'}else{'ON'})",
+                "-DAUTOMERGE_TARGET_ARCH=$cmakeArch",
+                "-DAUTOMERGE_RUST_PROFILE=$Profile")
+            Run "cmake" @("--build", ".")
+            if (-not $isArm64) {
+                Step "Running C++ tests"
+                Run "ctest" @("--output-on-failure")
+                Ok "C++ tests passed"
+            } else {
+                Write-Host "  Skipping C++ test execution (ARM64 on x64 host)" -ForegroundColor Yellow
+            }
+            Pop-Location
+            Ok "C++ $arch build succeeded"
+        }
+    }
+
+    # ── 4. WinRT component ─────────────────────────────────────────────────
+    if (-not $SkipWinRT) {
+        Step "Building WinRT component — $arch"
+        $winrtBuildScript = "$root/winrt-component/build-winrt.ps1"
+        if (Test-Path $winrtBuildScript) {
+            & $winrtBuildScript -Profile $Profile -VSPath $vsPath -Arch $arch
+            if ($LASTEXITCODE -ne 0) { Err "WinRT build failed for $arch" }
+            Ok "WinRT $arch component built"
+        } else {
+            Write-Host "  WinRT build script not found — skipping." -ForegroundColor Yellow
+        }
     }
 }
 
-# ─── 5. C# wrapper + tests ────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Main: run requested arch(es)
+# ─────────────────────────────────────────────────────────────────────────────
+
+$archList = if ($Arch -eq "all") { @("x64","arm64") } else { @($Arch) }
+foreach ($a in $archList) { Build-ForArch $a }
+
+# ─── C# wrapper + tests (host x64 only, after all native arches are built) ───
 
 if (-not $SkipCsharp) {
     if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
@@ -173,4 +238,5 @@ if (-not $SkipCsharp) {
 }
 
 Step "All steps completed"
-Ok "Build complete."
+Ok "Build complete ($($archList -join ' + '))."
+

@@ -38,6 +38,10 @@ TestResults/
 
 # ─── WinRT build output ───────────────────────────────────────────────────────
 build-winrt/
+build-winrt-arm64/
+
+# ─── C++ ARM64 cross-compile output ──────────────────────────────────────────
+build-arm64/
 
 # ─── Local dist / NuGet test output ──────────────────────────────────────────
 dist/
