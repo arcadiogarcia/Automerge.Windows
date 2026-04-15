@@ -22,7 +22,7 @@ else()
 endif()
 
 # ─── Version (bumped by release workflow) ─────────────────────────────────────
-set(AUTOMERGE_VERSION "0.1.0")
+set(AUTOMERGE_VERSION "0.2.0")
 
 # ─── Download ─────────────────────────────────────────────────────────────────
 vcpkg_download_distfile(ARCHIVE
@@ -64,4 +64,5 @@ file(WRITE "${CURRENT_PACKAGES_DIR}/share/${PORT}/copyright"
 
 # Allow static wrapper lib alongside dynamic core
 set(VCPKG_POLICY_ALLOW_STATIC_LIBRARY enabled)
+
 
