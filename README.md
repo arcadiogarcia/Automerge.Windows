@@ -64,7 +64,7 @@ Target: **.NET 9+** console, ASP.NET, or desktop apps that don't require WinRT a
 **NuGet (recommended):**
 
 ```xml
-<PackageReference Include="Automerge.Windows" Version="*" />
+<PackageReference Include="Automerge.Windows.CSharp" Version="*" />
 ```
 
 The package bundles `automerge_core.dll` for both `win-x64` and `win-arm64` — no extra steps needed.

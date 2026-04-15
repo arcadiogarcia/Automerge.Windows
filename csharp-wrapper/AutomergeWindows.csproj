@@ -15,7 +15,7 @@
   <!-- NuGet package metadata -->
   <PropertyGroup>
     <IsPackable>true</IsPackable>
-    <PackageId>Automerge.Windows</PackageId>
+    <PackageId>Automerge.Windows.CSharp</PackageId>
     <PackageVersion>0.1.0</PackageVersion>
     <Authors>Arcadio Garcia</Authors>
     <Description>Native Windows bindings for the Automerge CRDT library. Provides a C# P/Invoke wrapper over automerge_core.dll (Rust). Zero WebView, zero JavaScript runtime.</Description>

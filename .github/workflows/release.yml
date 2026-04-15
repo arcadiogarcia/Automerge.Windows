@@ -293,7 +293,7 @@ jobs:
 
           | Package | Description |
           |---|---|
-          | ``Automerge.Windows.$version.nupkg`` | C# P/Invoke wrapper — win-x64 + win-arm64 native DLLs bundled |
+          | ``Automerge.Windows.CSharp.$version.nupkg`` | C# P/Invoke wrapper — win-x64 + win-arm64 native DLLs bundled |
           | ``Automerge.Windows.WinRT.$version.nupkg`` | WinRT projection — win-x64 + win-arm64 + CsWinRT integration |
 
           ### Release artifacts (individual ZIPs)
