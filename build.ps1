@@ -224,11 +224,14 @@ $archList = if ($Arch -eq "all") { @("x64","arm64") } else { @($Arch) }
 foreach ($a in $archList) { Build-ForArch $a }
 
 # ─── C# wrapper + tests (host x64 only, after all native arches are built) ───
+# Always reset to x64 env before invoking dotnet: vcvarsall x64_arm64 sets
+# VSCMD_ARG_TGT_ARCH=arm64 which causes dotnet to reject -r win-x64.
 
 if (-not $SkipCsharp) {
     if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
         Write-Host "  dotnet not found - skipping C# build." -ForegroundColor Yellow
     } else {
+        Setup-VCEnv "x64"
         Step "Running C# tests (x64)"
         Push-Location "$root/tests/csharp"
         Run "dotnet" @("test", "-r", "win-x64", "--logger", "console;verbosity=normal")
