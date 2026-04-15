@@ -262,7 +262,8 @@ jobs:
             -NonInteractive
 
           $nupkg = Get-ChildItem dist/nuget -Filter "Automerge.Windows.WinRT*.nupkg" | Select-Object -First 1
-          "FILE=dist/nuget/$($nupkg.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append ────────────────────────────────────────────────────────
+          "FILE=dist/nuget/$($nupkg.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
