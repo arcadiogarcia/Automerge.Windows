@@ -1,5 +1,9 @@
-use automerge::{transaction::Transactable, AutoCommit, ChangeHash, ScalarValue, ROOT};
-use serde_json::Value as JsonValue;
+use automerge::{
+    transaction::{CommitOptions, Transactable},
+    ActorId, AutoCommit, ChangeHash, ObjId, ObjType, Patch, PatchAction, Prop, ReadDoc,
+    ScalarValue, ROOT,
+};
+use serde_json::{json, Value as JsonValue};
 use std::os::raw::c_char;
 
 use crate::error::set_last_error;
@@ -289,7 +293,631 @@ pub unsafe extern "C" fn AMfree_bytes(data: *mut u8, len: usize) {
     }
 }
 
-// Helpers
+// ─── Actor ───────────────────────────────────────────────────────────────────
+
+/// Get the actor ID of this document as raw bytes.
+/// Caller frees with `AMfree_bytes`.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMget_actor(
+    doc: *const AMdoc,
+    out_bytes: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_bytes);
+    check_ptr!(out_len);
+    let actor = (*doc).0.get_actor();
+    let bytes: Vec<u8> = actor.to_bytes().to_vec();
+    *out_len = bytes.len();
+    *out_bytes = alloc_bytes(bytes);
+    AM_OK
+}
+
+/// Set the actor ID for this document from raw bytes.
+/// # Safety
+/// All pointer arguments must be valid.
+#[no_mangle]
+pub unsafe extern "C" fn AMset_actor(
+    doc: *mut AMdoc,
+    bytes: *const u8,
+    len: usize,
+) -> i32 {
+    check_ptr!(doc);
+    if bytes.is_null() && len > 0 {
+        set_last_error("null bytes pointer with non-zero length");
+        return AM_ERR;
+    }
+    let slice: &[u8] = if len == 0 { &[] } else { std::slice::from_raw_parts(bytes, len) };
+    (*doc).0.set_actor(ActorId::from(slice.to_vec()));
+    AM_OK
+}
+
+// ─── Fine-grained read ───────────────────────────────────────────────────────
+
+/// Get a single value from a map object by key.
+/// `obj_id` is NULL/"" for ROOT, or a string like "5@hexactor" returned by AMput_object.
+/// Returns NUL-terminated JSON. Scalars → raw JSON value. Nested objects →
+/// `{"_obj_id":"...","_obj_type":"map|list|text"}`.
+/// Caller frees with `AMfree_bytes(ptr, len + 1)`.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMget(
+    doc: *const AMdoc,
+    obj_id: *const c_char,
+    key: *const c_char,
+    out_json: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_json);
+    check_ptr!(out_len);
+    let obj = match read_obj_id(obj_id) {
+        Ok(o) => o,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let key_str = match c_str_to_str(key) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    match (*doc).0.get(&obj, key_str) {
+        Ok(Some((val, vid))) => write_json_out(value_to_json(&val, &vid), out_json, out_len),
+        Ok(None) => { set_last_error(format!("key '{}' not found", key_str)); AM_ERR }
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+/// Get a single value from a list/text object by index.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMget_idx(
+    doc: *const AMdoc,
+    obj_id: *const c_char,
+    index: usize,
+    out_json: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_json);
+    check_ptr!(out_len);
+    let obj = match read_obj_id(obj_id) {
+        Ok(o) => o,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    match (*doc).0.get(&obj, index) {
+        Ok(Some((val, vid))) => write_json_out(value_to_json(&val, &vid), out_json, out_len),
+        Ok(None) => { set_last_error(format!("index {} out of range", index)); AM_ERR }
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+/// Get the keys of a map object as a JSON array of strings.
+/// Caller frees with `AMfree_bytes(ptr, len + 1)`.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMkeys(
+    doc: *const AMdoc,
+    obj_id: *const c_char,
+    out_json: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_json);
+    check_ptr!(out_len);
+    let obj = match read_obj_id(obj_id) {
+        Ok(o) => o,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let keys: Vec<String> = (*doc).0.keys(&obj).map(|k| k.to_string()).collect();
+    let json_val = JsonValue::Array(keys.into_iter().map(|k| JsonValue::String(k)).collect());
+    write_json_out(json_val, out_json, out_len)
+}
+
+/// Get the length (number of elements/keys) of an object.
+/// Works for maps, lists, and text objects.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMlength(
+    doc: *const AMdoc,
+    obj_id: *const c_char,
+    out_n: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_n);
+    let obj = match read_obj_id(obj_id) {
+        Ok(o) => o,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    *out_n = (*doc).0.length(&obj);
+    AM_OK
+}
+
+/// Get the text content of a text object as a UTF-8 string.
+/// Caller frees with `AMfree_bytes(ptr, len + 1)`.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMget_text(
+    doc: *const AMdoc,
+    obj_id: *const c_char,
+    out_text: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_text);
+    check_ptr!(out_len);
+    let obj = match read_obj_id(obj_id) {
+        Ok(o) => o,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    match (*doc).0.text(&obj) {
+        Ok(text) => {
+            let mut bytes = text.into_bytes();
+            *out_len = bytes.len();
+            bytes.push(0);
+            bytes.shrink_to_fit();
+            *out_text = bytes.as_mut_ptr();
+            std::mem::forget(bytes);
+            AM_OK
+        }
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+// ─── Fine-grained write ──────────────────────────────────────────────────────
+
+/// Set a scalar value in a map object by key.
+/// `scalar_json` must be a JSON scalar: `"hello"`, `42`, `true`, `null`.
+/// Returns 0 on success.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMput(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    key: *const c_char,
+    scalar_json: *const c_char,
+) -> i32 {
+    check_ptr!(doc);
+    let obj = match read_obj_id(obj_id) {
+        Ok(o) => o,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let key_str = match c_str_to_str(key) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let json_str = match c_str_to_str(scalar_json) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let json_val: JsonValue = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(e) => { set_last_error(e.to_string()); return AM_ERR; }
+    };
+    let sv = match json_val_to_scalar(&json_val) {
+        Ok(v) => v,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    if let Err(e) = (*doc).0.put(&obj, key_str, sv) {
+        set_last_error(e.to_string());
+        return AM_ERR;
+    }
+    (*doc).0.commit();
+    AM_OK
+}
+
+/// Set a scalar value in a list object by index (overwrites existing item).
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMput_idx(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    index: usize,
+    scalar_json: *const c_char,
+) -> i32 {
+    check_ptr!(doc);
+    let obj = match read_obj_id(obj_id) {
+        Ok(o) => o,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let json_str = match c_str_to_str(scalar_json) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let json_val: JsonValue = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(e) => { set_last_error(e.to_string()); return AM_ERR; }
+    };
+    let sv = match json_val_to_scalar(&json_val) {
+        Ok(v) => v,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    if let Err(e) = (*doc).0.put(&obj, index, sv) {
+        set_last_error(e.to_string());
+        return AM_ERR;
+    }
+    (*doc).0.commit();
+    AM_OK
+}
+
+/// Create a nested object (map, list, or text) at a map key.
+/// On success, `*out_new_obj_id` is a NUL-terminated string representing the new
+/// object's ID. Caller frees with `AMfree_bytes(ptr, len + 1)`.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMput_object(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    key: *const c_char,
+    obj_type: *const c_char,
+    out_new_obj_id: *mut *mut u8,
+    out_new_obj_id_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_new_obj_id);
+    check_ptr!(out_new_obj_id_len);
+    let obj = match read_obj_id(obj_id) {
+        Ok(o) => o,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let key_str = match c_str_to_str(key) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let ot = match parse_obj_type(obj_type) {
+        Ok(t) => t,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let new_id = match (*doc).0.put_object(&obj, key_str, ot) {
+        Ok(id) => id,
+        Err(e) => { set_last_error(e.to_string()); return AM_ERR; }
+    };
+    (*doc).0.commit();
+    write_cstring_out(exid_to_string(&new_id), out_new_obj_id, out_new_obj_id_len)
+}
+
+/// Delete a key from a map object.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMdelete(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    key: *const c_char,
+) -> i32 {
+    check_ptr!(doc);
+    let obj = match read_obj_id(obj_id) {
+        Ok(o) => o,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let key_str = match c_str_to_str(key) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    if let Err(e) = (*doc).0.delete(&obj, key_str) {
+        set_last_error(e.to_string());
+        return AM_ERR;
+    }
+    (*doc).0.commit();
+    AM_OK
+}
+
+// ─── List operations ─────────────────────────────────────────────────────────
+
+/// Insert a scalar value into a list object at `index`.
+/// Use `index = usize::MAX` to append to the end.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMinsert(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    index: usize,
+    scalar_json: *const c_char,
+) -> i32 {
+    check_ptr!(doc);
+    let obj = match read_obj_id(obj_id) {
+        Ok(o) => o,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let json_str = match c_str_to_str(scalar_json) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let json_val: JsonValue = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(e) => { set_last_error(e.to_string()); return AM_ERR; }
+    };
+    let sv = match json_val_to_scalar(&json_val) {
+        Ok(v) => v,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let actual_index = if index == usize::MAX { (*doc).0.length(&obj) } else { index };
+    if let Err(e) = (*doc).0.insert(&obj, actual_index, sv) {
+        set_last_error(e.to_string());
+        return AM_ERR;
+    }
+    (*doc).0.commit();
+    AM_OK
+}
+
+/// Insert a nested object (map/list/text) into a list at `index`.
+/// On success, returns the new object's ID as a NUL-terminated string.
+/// Caller frees with `AMfree_bytes(ptr, len + 1)`.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMinsert_object(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    index: usize,
+    obj_type: *const c_char,
+    out_new_obj_id: *mut *mut u8,
+    out_new_obj_id_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_new_obj_id);
+    check_ptr!(out_new_obj_id_len);
+    let obj = match read_obj_id(obj_id) {
+        Ok(o) => o,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let ot = match parse_obj_type(obj_type) {
+        Ok(t) => t,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let actual_index = if index == usize::MAX { (*doc).0.length(&obj) } else { index };
+    let new_id = match (*doc).0.insert_object(&obj, actual_index, ot) {
+        Ok(id) => id,
+        Err(e) => { set_last_error(e.to_string()); return AM_ERR; }
+    };
+    (*doc).0.commit();
+    write_cstring_out(exid_to_string(&new_id), out_new_obj_id, out_new_obj_id_len)
+}
+
+/// Delete the element at `index` from a list object.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMdelete_at(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    index: usize,
+) -> i32 {
+    check_ptr!(doc);
+    let obj = match read_obj_id(obj_id) {
+        Ok(o) => o,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    if let Err(e) = (*doc).0.delete(&obj, index) {
+        set_last_error(e.to_string());
+        return AM_ERR;
+    }
+    (*doc).0.commit();
+    AM_OK
+}
+
+// ─── Counter ─────────────────────────────────────────────────────────────────
+
+/// Create a counter scalar at `key` in a map object with the given initial value.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMput_counter(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    key: *const c_char,
+    initial: i64,
+) -> i32 {
+    check_ptr!(doc);
+    let obj = match read_obj_id(obj_id) {
+        Ok(o) => o,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let key_str = match c_str_to_str(key) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    if let Err(e) = (*doc).0.put(&obj, key_str, ScalarValue::counter(initial)) {
+        set_last_error(e.to_string());
+        return AM_ERR;
+    }
+    (*doc).0.commit();
+    AM_OK
+}
+
+/// Increment (or decrement) a counter at `key` in a map object by `delta`.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMincrement(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    key: *const c_char,
+    delta: i64,
+) -> i32 {
+    check_ptr!(doc);
+    let obj = match read_obj_id(obj_id) {
+        Ok(o) => o,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let key_str = match c_str_to_str(key) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    if let Err(e) = (*doc).0.increment(&obj, key_str, delta) {
+        set_last_error(e.to_string());
+        return AM_ERR;
+    }
+    (*doc).0.commit();
+    AM_OK
+}
+
+// ─── Text ────────────────────────────────────────────────────────────────────
+
+/// Insert/delete characters in a text object.
+/// `start` is the character index; `delete_count` is the number of UTF-16 code units
+/// to delete (negative is not valid; use 0 to insert only); `text` is UTF-8 to insert.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMsplice_text(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    start: usize,
+    delete_count: isize,
+    text: *const c_char,
+) -> i32 {
+    check_ptr!(doc);
+    let obj = match read_obj_id(obj_id) {
+        Ok(o) => o,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let insert_text = if text.is_null() {
+        ""
+    } else {
+        match c_str_to_str(text) {
+            Ok(s) => s,
+            Err(e) => { set_last_error(e); return AM_ERR; }
+        }
+    };
+    if let Err(e) = (*doc).0.splice_text(&obj, start, delete_count, insert_text) {
+        set_last_error(e.to_string());
+        return AM_ERR;
+    }
+    (*doc).0.commit();
+    AM_OK
+}
+
+// ─── Fork and incremental save ───────────────────────────────────────────────
+
+/// Fork (clone) the document, producing an independent copy with the same state.
+/// Caller frees the result with `AMdestroy_doc`.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMfork(
+    doc: *mut AMdoc,
+    out_doc: *mut *mut AMdoc,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_doc);
+    let forked = (*doc).0.fork();
+    *out_doc = Box::into_raw(Box::new(AMdoc(forked)));
+    AM_OK
+}
+
+/// Save only the changes that have not yet been saved (incremental save).
+/// Much faster than `AMsave` when most of the document is unchanged.
+/// Caller frees with `AMfree_bytes`.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMsave_incremental(
+    doc: *mut AMdoc,
+    out_bytes: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_bytes);
+    check_ptr!(out_len);
+    let bytes = (*doc).0.save_incremental();
+    *out_len = bytes.len();
+    *out_bytes = alloc_bytes(bytes);
+    AM_OK
+}
+
+// ─── Commit with metadata ────────────────────────────────────────────────────
+
+/// Commit pending changes with an optional message and/or timestamp.
+/// `message` may be NULL (no message). `timestamp` is Unix seconds; 0 = no timestamp.
+/// # Safety
+/// All pointer arguments must be valid.
+#[no_mangle]
+pub unsafe extern "C" fn AMcommit(
+    doc: *mut AMdoc,
+    message: *const c_char,
+    timestamp: i64,
+) -> i32 {
+    check_ptr!(doc);
+    let mut options = CommitOptions::default();
+    if !message.is_null() {
+        match c_str_to_str(message) {
+            Ok(s) if !s.is_empty() => { options = options.with_message(s.to_owned()); }
+            Ok(_) => {}
+            Err(e) => { set_last_error(e); return AM_ERR; }
+        }
+    }
+    if timestamp != 0 {
+        options = options.with_time(timestamp);
+    }
+    (*doc).0.commit_with(options);
+    AM_OK
+}
+
+// ─── Conflict detection ──────────────────────────────────────────────────────
+
+/// Get all concurrent values for a key in a map object (for conflict resolution).
+/// Returns a JSON array. Each element is the same format as `AMget`.
+/// Caller frees with `AMfree_bytes(ptr, len + 1)`.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMget_all(
+    doc: *const AMdoc,
+    obj_id: *const c_char,
+    key: *const c_char,
+    out_json: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_json);
+    check_ptr!(out_len);
+    let obj = match read_obj_id(obj_id) {
+        Ok(o) => o,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let key_str = match c_str_to_str(key) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let all: Vec<JsonValue> = match (*doc).0.get_all(&obj, key_str) {
+        Ok(iter) => iter.into_iter().map(|(val, id)| value_to_json(&val, &id)).collect(),
+        Err(e) => { set_last_error(e.to_string()); return AM_ERR; }
+    };
+    write_json_out(JsonValue::Array(all), out_json, out_len)
+}
+
+// ─── Diff / patches ──────────────────────────────────────────────────────────
+
+/// Get patches describing all changes since the last call to `AMdiff_incremental`.
+/// Returns a JSON array of patch objects. See documentation for the patch format.
+/// Caller frees with `AMfree_bytes(ptr, len + 1)`.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMdiff_incremental(
+    doc: *mut AMdoc,
+    out_json: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_json);
+    check_ptr!(out_len);
+    let patches = (*doc).0.diff_incremental();
+    let patch_jsons: Vec<JsonValue> = patches.iter().map(patch_to_json).collect();
+    write_json_out(JsonValue::Array(patch_jsons), out_json, out_len)
+}
+
+
 
 /// Move a `Vec<u8>` to the heap; return raw pointer.
 /// Capacity is shrunk to `len` so `AMfree_bytes(ptr, len)` is safe.
@@ -354,3 +982,207 @@ fn json_val_to_scalar(v: &JsonValue) -> Result<ScalarValue, String> {
         _ => Err("nested objects/arrays require AMput_object".to_string()),
     }
 }
+
+// ─── New helpers ─────────────────────────────────────────────────────────────
+
+/// Convert an `ObjId` to its canonical string representation.
+/// ROOT → `"_root"`; other objects → `"counter@hexactor"`.
+fn exid_to_string(id: &ObjId) -> String {
+    format!("{}", id)
+}
+
+/// Parse a string back to an `ObjId`. NULL or "" or "_root" → ROOT.
+unsafe fn read_obj_id(ptr: *const c_char) -> Result<ObjId, String> {
+    if ptr.is_null() {
+        return Ok(ROOT);
+    }
+    let s = c_str_to_str(ptr)?;
+    parse_obj_id(s)
+}
+
+fn parse_obj_id(s: &str) -> Result<ObjId, String> {
+    if s.is_empty() || s == "_root" {
+        return Ok(ROOT);
+    }
+    let at = s.find('@').ok_or_else(|| format!("invalid obj_id '{}': missing '@'", s))?;
+    let counter: u64 = s[..at]
+        .parse()
+        .map_err(|_| format!("invalid obj_id counter '{}'", &s[..at]))?;
+    let actor_bytes =
+        hex_decode(&s[at + 1..]).map_err(|e| format!("invalid obj_id actor hex: {}", e))?;
+    let actor = ActorId::from(actor_bytes);
+    Ok(ObjId::Id(counter, actor, 0))
+}
+
+fn parse_obj_type(ptr: *const c_char) -> Result<ObjType, String> {
+    let s = unsafe { c_str_to_str(ptr)? };
+    match s {
+        "map" => Ok(ObjType::Map),
+        "list" => Ok(ObjType::List),
+        "text" => Ok(ObjType::Text),
+        other => Err(format!("unknown obj_type '{}': use 'map', 'list', or 'text'", other)),
+    }
+}
+
+/// Convert `Value` + its ExId to a `serde_json::Value`.
+/// Scalars → raw JSON. Objects → `{"_obj_id":"...","_obj_type":"map|list|text"}`.
+fn value_to_json<'a>(val: &automerge::Value<'a>, obj_id: &ObjId) -> JsonValue {
+    match val {
+        automerge::Value::Scalar(sv) => scalar_to_json_value(sv),
+        automerge::Value::Object(ot) => json!({
+            "_obj_id":   exid_to_string(obj_id),
+            "_obj_type": obj_type_str(ot),
+        }),
+    }
+}
+
+fn scalar_to_json_value(sv: &ScalarValue) -> JsonValue {
+    match sv {
+        ScalarValue::Null => JsonValue::Null,
+        ScalarValue::Boolean(b) => json!(*b),
+        ScalarValue::Int(i) => json!(*i),
+        ScalarValue::Uint(u) => json!(*u),
+        ScalarValue::F64(f) => json!(*f),
+        ScalarValue::Str(s) => json!(s.as_str()),
+        ScalarValue::Bytes(b) => JsonValue::Array(b.iter().map(|n| json!(*n)).collect()),
+        ScalarValue::Counter(c) => json!(i64::from(c)),
+        ScalarValue::Timestamp(t) => json!(*t),
+        ScalarValue::Unknown { type_code, bytes } => {
+            json!({ "_unknown_type": type_code, "_bytes": bytes })
+        }
+    }
+}
+
+fn obj_type_str(ot: &ObjType) -> &'static str {
+    match ot {
+        ObjType::Map | ObjType::Table => "map",
+        ObjType::List => "list",
+        ObjType::Text => "text",
+    }
+}
+
+/// Serialize `value` to JSON, write NUL-terminated bytes to out, return AM_OK.
+unsafe fn write_json_out(
+    value: JsonValue,
+    out_json: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    let s = match serde_json::to_string(&value) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e.to_string()); return AM_ERR; }
+    };
+    let mut bytes = s.into_bytes();
+    *out_len = bytes.len();
+    bytes.push(0);
+    bytes.shrink_to_fit();
+    *out_json = bytes.as_mut_ptr();
+    std::mem::forget(bytes);
+    AM_OK
+}
+
+/// Write a Rust String as a NUL-terminated C-string to the out pointers.
+/// Caller frees with `AMfree_bytes(ptr, len + 1)`.
+/// `*out_len` = string length WITHOUT the NUL byte.
+unsafe fn write_cstring_out(
+    s: String,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    let mut bytes = s.into_bytes();
+    *out_len = bytes.len();
+    bytes.push(0);
+    bytes.shrink_to_fit();
+    *out_ptr = bytes.as_mut_ptr();
+    std::mem::forget(bytes);
+    AM_OK
+}
+
+/// Read a NUL-terminated C string to a Rust `&str`.
+unsafe fn c_str_to_str<'a>(ptr: *const c_char) -> Result<&'a str, String> {
+    if ptr.is_null() {
+        return Err("null string pointer".to_string());
+    }
+    std::ffi::CStr::from_ptr(ptr)
+        .to_str()
+        .map_err(|_| "invalid UTF-8 in C string".to_string())
+}
+
+/// Simple hex decode — avoids adding the `hex` crate as a direct dependency.
+fn hex_decode(s: &str) -> Result<Vec<u8>, String> {
+    if s.len() % 2 != 0 {
+        return Err("odd-length hex string".to_string());
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| {
+            u8::from_str_radix(&s[i..i + 2], 16)
+                .map_err(|_| format!("invalid hex byte at position {}", i))
+        })
+        .collect()
+}
+
+/// Serialize an automerge `Patch` to a serde_json object.
+fn patch_to_json(patch: &Patch) -> JsonValue {
+    let obj = exid_to_string(&patch.obj);
+    let path: Vec<JsonValue> = patch
+        .path
+        .iter()
+        .map(|(id, prop)| json!([exid_to_string(id), prop_to_json(prop)]))
+        .collect();
+    let action = match &patch.action {
+        PatchAction::PutMap { key, value: (val, vid), conflict } => json!({
+            "op": "put_map",
+            "key": key.as_str(),
+            "value": value_to_json(val, vid),
+            "conflict": conflict,
+        }),
+        PatchAction::PutSeq { index, value: (val, vid), conflict } => json!({
+            "op": "put_seq",
+            "index": index,
+            "value": value_to_json(val, vid),
+            "conflict": conflict,
+        }),
+        PatchAction::Insert { index, values, .. } => {
+            let vals: Vec<JsonValue> =
+                values.iter().map(|(v, id, _)| value_to_json(v, id)).collect();
+            json!({
+                "op": "insert",
+                "index": index,
+                "values": vals,
+            })
+        }
+        PatchAction::SpliceText { index, value, .. } => json!({
+            "op": "splice_text",
+            "index": index,
+            "value": value.make_string(),
+        }),
+        PatchAction::Increment { prop, value } => json!({
+            "op": "increment",
+            "prop": prop_to_json(prop),
+            "value": value,
+        }),
+        PatchAction::Conflict { prop } => json!({
+            "op": "conflict",
+            "prop": prop_to_json(prop),
+        }),
+        PatchAction::DeleteMap { key } => json!({
+            "op": "delete_map",
+            "key": key.as_str(),
+        }),
+        PatchAction::DeleteSeq { index, length } => json!({
+            "op": "delete_seq",
+            "index": index,
+            "length": length,
+        }),
+        PatchAction::Mark { .. } => json!({ "op": "mark" }),
+    };
+    json!({ "obj": obj, "path": path, "action": action })
+}
+
+fn prop_to_json(prop: &Prop) -> JsonValue {
+    match prop {
+        Prop::Map(k) => json!(k.as_str()),
+        Prop::Seq(i) => json!(*i),
+    }
+}
+

@@ -102,6 +102,212 @@ int AMget_value(const AMdoc* doc,
 /// @return AM_OK on success.
 int AMput_json_root(AMdoc* doc, const char* json_obj);
 
+// ─── Actor ────────────────────────────────────────────────────────────────────
+
+/// Get the actor ID for this document as raw bytes.
+/// @param doc       The document.
+/// @param out_bytes Receives heap-allocated actor bytes; free with AMfree_bytes.
+/// @param out_len   Receives byte count.
+/// @return AM_OK on success.
+int AMget_actor(const AMdoc* doc, uint8_t** out_bytes, size_t* out_len);
+
+/// Set the actor ID for this document.
+/// @param doc   The document.
+/// @param bytes Actor ID bytes.
+/// @param len   Byte count.
+/// @return AM_OK on success.
+int AMset_actor(AMdoc* doc, const uint8_t* bytes, size_t len);
+
+// ─── Fine-grained read ────────────────────────────────────────────────────────
+
+/// Read a single value from a map object by key.
+/// @param doc       The document.
+/// @param obj_id    Object ID string (NULL or "" for root, "counter@hex" otherwise).
+/// @param key       Map key (UTF-8).
+/// @param out_json  Receives NUL-terminated JSON; free with AMfree_bytes(ptr, len+1).
+/// @param out_len   Receives byte count excluding NUL.
+/// @return AM_OK on success.
+int AMget(const AMdoc* doc, const char* obj_id, const char* key,
+          uint8_t** out_json, size_t* out_len);
+
+/// Read a single value from a list/text object by index.
+/// @param doc      The document.
+/// @param obj_id   Object ID string.
+/// @param index    Zero-based index.
+/// @param out_json Receives NUL-terminated JSON; free with AMfree_bytes(ptr, len+1).
+/// @param out_len  Receives byte count excluding NUL.
+/// @return AM_OK on success.
+int AMget_idx(const AMdoc* doc, const char* obj_id, size_t index,
+              uint8_t** out_json, size_t* out_len);
+
+/// Get the keys of a map object as a JSON array of strings.
+/// @param doc      The document.
+/// @param obj_id   Object ID (NULL/"" for root).
+/// @param out_json Receives NUL-terminated JSON array; free with AMfree_bytes(ptr, len+1).
+/// @param out_len  Receives byte count excluding NUL.
+/// @return AM_OK on success.
+int AMkeys(const AMdoc* doc, const char* obj_id,
+           uint8_t** out_json, size_t* out_len);
+
+/// Get the number of elements/keys in an object.
+/// @param doc    The document.
+/// @param obj_id Object ID.
+/// @param out_n  Receives the count.
+/// @return AM_OK on success.
+int AMlength(const AMdoc* doc, const char* obj_id, size_t* out_n);
+
+/// Get the text content of a text object.
+/// @param doc      The document.
+/// @param obj_id   Object ID of the text object.
+/// @param out_text Receives NUL-terminated UTF-8; free with AMfree_bytes(ptr, len+1).
+/// @param out_len  Receives byte count excluding NUL.
+/// @return AM_OK on success.
+int AMget_text(const AMdoc* doc, const char* obj_id,
+               uint8_t** out_text, size_t* out_len);
+
+// ─── Fine-grained write ──────────────────────────────────────────────────────
+
+/// Set a scalar value in a map object by key.
+/// @param doc         The document.
+/// @param obj_id      Object ID (NULL/"" for root).
+/// @param key         Map key (UTF-8).
+/// @param scalar_json JSON scalar string, e.g. "\"hello\"", "42", "true", "null".
+/// @return AM_OK on success.
+int AMput(AMdoc* doc, const char* obj_id, const char* key, const char* scalar_json);
+
+/// Set a scalar value in a list object at an index (overwrites existing item).
+/// @param doc         The document.
+/// @param obj_id      List object ID.
+/// @param index       Zero-based index.
+/// @param scalar_json JSON scalar string.
+/// @return AM_OK on success.
+int AMput_idx(AMdoc* doc, const char* obj_id, size_t index, const char* scalar_json);
+
+/// Create a nested object (map, list, or text) at a map key.
+/// @param doc               The document.
+/// @param obj_id            Parent object ID.
+/// @param key               Map key.
+/// @param obj_type          "map", "list", or "text".
+/// @param out_new_obj_id    Receives NUL-terminated new object ID; free with AMfree_bytes(ptr, len+1).
+/// @param out_new_obj_id_len Receives byte count of the ID excluding NUL.
+/// @return AM_OK on success.
+int AMput_object(AMdoc* doc, const char* obj_id, const char* key, const char* obj_type,
+                 uint8_t** out_new_obj_id, size_t* out_new_obj_id_len);
+
+/// Delete a key from a map object.
+/// @param doc    The document.
+/// @param obj_id Map object ID.
+/// @param key    Key to delete.
+/// @return AM_OK on success.
+int AMdelete(AMdoc* doc, const char* obj_id, const char* key);
+
+// ─── List operations ─────────────────────────────────────────────────────────
+
+/// Insert a scalar value into a list at an index.
+/// Pass SIZE_MAX as index to append.
+/// @param doc         The document.
+/// @param obj_id      List object ID.
+/// @param index       Insertion position (or SIZE_MAX to append).
+/// @param scalar_json JSON scalar.
+/// @return AM_OK on success.
+int AMinsert(AMdoc* doc, const char* obj_id, size_t index, const char* scalar_json);
+
+/// Insert a nested object into a list at an index.
+/// @param doc               The document.
+/// @param obj_id            List object ID.
+/// @param index             Insertion position (or SIZE_MAX to append).
+/// @param obj_type          "map", "list", or "text".
+/// @param out_new_obj_id    Receives new object ID; free with AMfree_bytes(ptr, len+1).
+/// @param out_new_obj_id_len Receives string length excluding NUL.
+/// @return AM_OK on success.
+int AMinsert_object(AMdoc* doc, const char* obj_id, size_t index, const char* obj_type,
+                    uint8_t** out_new_obj_id, size_t* out_new_obj_id_len);
+
+/// Delete the element at an index from a list object.
+/// @param doc    The document.
+/// @param obj_id List object ID.
+/// @param index  Zero-based index to delete.
+/// @return AM_OK on success.
+int AMdelete_at(AMdoc* doc, const char* obj_id, size_t index);
+
+// ─── Counter ─────────────────────────────────────────────────────────────────
+
+/// Create a counter scalar at a map key with an initial value.
+/// @param doc     The document.
+/// @param obj_id  Map object ID.
+/// @param key     Map key.
+/// @param initial Initial counter value.
+/// @return AM_OK on success.
+int AMput_counter(AMdoc* doc, const char* obj_id, const char* key, int64_t initial);
+
+/// Increment (or decrement) a counter at a map key by delta.
+/// @param doc    The document.
+/// @param obj_id Map object ID.
+/// @param key    Map key pointing to a counter.
+/// @param delta  Amount to add (negative to decrement).
+/// @return AM_OK on success.
+int AMincrement(AMdoc* doc, const char* obj_id, const char* key, int64_t delta);
+
+// ─── Text ────────────────────────────────────────────────────────────────────
+
+/// Insert/delete characters in a text object.
+/// @param doc          The document.
+/// @param obj_id       Text object ID.
+/// @param start        Character index to start editing.
+/// @param delete_count Number of characters to delete (0 for insert-only).
+/// @param text         UTF-8 text to insert (may be NULL or "" for delete-only).
+/// @return AM_OK on success.
+int AMsplice_text(AMdoc* doc, const char* obj_id,
+                  size_t start, ptrdiff_t delete_count, const char* text);
+
+// ─── Fork and incremental save ───────────────────────────────────────────────
+
+/// Fork (clone) the document, producing an independent copy with the same state.
+/// Caller frees with AMdestroy_doc.
+/// @param doc     The source document.
+/// @param out_doc Receives a newly allocated document handle.
+/// @return AM_OK on success.
+int AMfork(AMdoc* doc, AMdoc** out_doc);
+
+/// Save only the changes that have not yet been saved.
+/// @param doc       The document.
+/// @param out_bytes Receives incremental bytes; free with AMfree_bytes.
+/// @param out_len   Receives byte count.
+/// @return AM_OK on success.
+int AMsave_incremental(AMdoc* doc, uint8_t** out_bytes, size_t* out_len);
+
+// ─── Commit with metadata ─────────────────────────────────────────────────────
+
+/// Commit pending changes with an optional message and/or timestamp.
+/// @param doc       The document.
+/// @param message   Optional commit message (may be NULL).
+/// @param timestamp Unix seconds timestamp (0 = omit).
+/// @return AM_OK on success.
+int AMcommit(AMdoc* doc, const char* message, int64_t timestamp);
+
+// ─── Conflict detection ──────────────────────────────────────────────────────
+
+/// Get all concurrent values for a key (conflict detection).
+/// Returns a JSON array; each element has the same format as AMget.
+/// @param doc      The document.
+/// @param obj_id   Map object ID.
+/// @param key      Map key.
+/// @param out_json Receives NUL-terminated JSON array; free with AMfree_bytes(ptr, len+1).
+/// @param out_len  Receives byte count excluding NUL.
+/// @return AM_OK on success.
+int AMget_all(const AMdoc* doc, const char* obj_id, const char* key,
+              uint8_t** out_json, size_t* out_len);
+
+// ─── Diff / patches ──────────────────────────────────────────────────────────
+
+/// Get patches for all changes since the last call to this function.
+/// Returns a JSON array of patch objects.
+/// @param doc      The document.
+/// @param out_json Receives NUL-terminated JSON array; free with AMfree_bytes(ptr, len+1).
+/// @param out_len  Receives byte count excluding NUL.
+/// @return AM_OK on success.
+int AMdiff_incremental(AMdoc* doc, uint8_t** out_json, size_t* out_len);
+
 // ─── Sync ─────────────────────────────────────────────────────────────────────
 
 /// Create a new sync state.  Ownership is transferred to caller.

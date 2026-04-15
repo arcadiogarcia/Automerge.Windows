@@ -46,6 +46,105 @@ namespace Automerge.Windows
         internal static partial int AMput_json_root(
             IntPtr doc, string jsonObj);
 
+        // ─── Actor ──────────────────────────────────────────────────────────
+        [LibraryImport(Lib)] internal static partial int AMget_actor(
+            IntPtr doc, ref IntPtr out_bytes, ref nuint out_len);
+
+        [LibraryImport(Lib)] internal static partial int AMset_actor(
+            IntPtr doc, byte* bytes, nuint len);
+
+        // ─── Fine-grained read ──────────────────────────────────────────────
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMget(
+            IntPtr doc, string? objId, string key,
+            ref IntPtr out_json, ref nuint out_len);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMget_idx(
+            IntPtr doc, string? objId, nuint index,
+            ref IntPtr out_json, ref nuint out_len);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMkeys(
+            IntPtr doc, string? objId,
+            ref IntPtr out_json, ref nuint out_len);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMlength(
+            IntPtr doc, string? objId, ref nuint out_n);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMget_text(
+            IntPtr doc, string objId,
+            ref IntPtr out_text, ref nuint out_len);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMget_all(
+            IntPtr doc, string? objId, string key,
+            ref IntPtr out_json, ref nuint out_len);
+
+        // ─── Fine-grained write ─────────────────────────────────────────────
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMput(
+            IntPtr doc, string? objId, string key, string scalarJson);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMput_idx(
+            IntPtr doc, string? objId, nuint index, string scalarJson);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMput_object(
+            IntPtr doc, string? objId, string key, string objType,
+            ref IntPtr out_new_obj_id, ref nuint out_len);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMdelete(
+            IntPtr doc, string? objId, string key);
+
+        // ─── List operations ────────────────────────────────────────────────
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMinsert(
+            IntPtr doc, string objId, nuint index, string scalarJson);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMinsert_object(
+            IntPtr doc, string objId, nuint index, string objType,
+            ref IntPtr out_new_obj_id, ref nuint out_len);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMdelete_at(
+            IntPtr doc, string objId, nuint index);
+
+        // ─── Counter ────────────────────────────────────────────────────────
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMput_counter(
+            IntPtr doc, string? objId, string key, long initial);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMincrement(
+            IntPtr doc, string? objId, string key, long delta);
+
+        // ─── Text ───────────────────────────────────────────────────────────
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMsplice_text(
+            IntPtr doc, string objId, nuint start, nint deleteCount, string? text);
+
+        // ─── Fork and incremental save ──────────────────────────────────────
+        [LibraryImport(Lib)] internal static partial int AMfork(
+            IntPtr doc, ref IntPtr out_doc);
+
+        [LibraryImport(Lib)] internal static partial int AMsave_incremental(
+            IntPtr doc, ref IntPtr out_bytes, ref nuint out_len);
+
+        // ─── Commit with metadata ───────────────────────────────────────────
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMcommit(
+            IntPtr doc, string? message, long timestamp);
+
+        // ─── Diff ───────────────────────────────────────────────────────────
+        [LibraryImport(Lib)] internal static partial int AMdiff_incremental(
+            IntPtr doc, ref IntPtr out_json, ref nuint out_len);
+
         // ─── Sync ───────────────────────────────────────────────────────────
         [LibraryImport(Lib)] internal static partial IntPtr AMcreate_sync_state();
         [LibraryImport(Lib)] internal static partial void AMfree_sync_state(IntPtr state);

@@ -11,12 +11,11 @@ namespace Automerge.Windows
 
     /// WinRT projection of an Automerge document.
     ///
-    /// Binary data (changes, heads, snapshots, sync messages) is exchanged as
-    /// IBuffer to interoperate naturally with Windows APIs.  Use
-    /// AutomergeHelpers in the C# layer to convert to/from byte arrays.
+    /// Object IDs: pass an empty string for the document root; nested objects
+    /// return their ID as a String from PutObject / InsertObject.
     ///
-    /// All operations that mutate the document should be serialised by the
-    /// caller.  There are no internal locks.
+    /// Scalar JSON: methods that take scalarJson expect a JSON-encoded scalar:
+    ///   "{\"hello\"}", "42", "true", "null".
     runtimeclass Document
     {
         /// Create a new empty document.
@@ -24,67 +23,116 @@ namespace Automerge.Windows
 
         // ─── Persistence ─────────────────────────────────────────────────
 
-        /// Serialize the document to a binary buffer.
         Windows.Storage.Streams.IBuffer Save();
-
-        /// Load a document from a binary buffer.
         static Document Load(Windows.Storage.Streams.IBuffer data);
+
+        /// Save only changes since the last Save / SaveIncremental call.
+        Windows.Storage.Streams.IBuffer SaveIncremental();
+
+        // ─── Fork ────────────────────────────────────────────────────────
+
+        /// Fork (clone) the document, producing an independent copy.
+        Document Fork();
 
         // ─── Heads ───────────────────────────────────────────────────────
 
-        /// Get the current heads as packed 32-byte SHA-256 hashes.
         Windows.Storage.Streams.IBuffer GetHeads();
 
         // ─── Changes ─────────────────────────────────────────────────────
 
-        /// Get changes since the given heads.
-        /// Pass an empty IBuffer to get all changes from genesis.
         Windows.Storage.Streams.IBuffer GetChanges(Windows.Storage.Streams.IBuffer heads);
-
-        /// Apply a binary changes buffer to the document.
         void ApplyChanges(Windows.Storage.Streams.IBuffer changes);
 
         // ─── Merge ───────────────────────────────────────────────────────
 
-        /// Merge all changes from other into this document.
         void Merge(Document other);
+
+        // ─── Actor ───────────────────────────────────────────────────────
+
+        Windows.Storage.Streams.IBuffer GetActorId();
+        void SetActorId(Windows.Storage.Streams.IBuffer actorId);
 
         // ─── Read ────────────────────────────────────────────────────────
 
-        /// Read a value by JSON-array path.
-        /// Pass an empty string or "[]" to serialise the entire root object.
+        /// Read a value by JSON-array path (legacy; serialises whole doc).
         String GetValue(String pathJson);
+
+        /// Get a single value from a map object by key. Returns JSON.
+        String Get(String objId, String key);
+
+        /// Get a single value from a list/text object by 0-based index. Returns JSON.
+        String GetIdx(String objId, Int32 index);
+
+        /// Get all map keys as a JSON array string.
+        String GetKeysJson(String objId);
+
+        /// Get the number of items in an object.
+        Int32 GetLength(String objId);
+
+        /// Get the text content of a text CRDT object.
+        String GetText(String objId);
+
+        /// Get all concurrent values for a key (conflict detection). Returns JSON array.
+        String GetAllJson(String objId, String key);
 
         // ─── Write ───────────────────────────────────────────────────────
 
-        /// Set scalar key-value pairs from a JSON object string.
+        /// Set scalar key-value pairs from a JSON object (legacy).
         void PutJsonRoot(String jsonObj);
+
+        /// Set a scalar value in a map object.
+        void Put(String objId, String key, String scalarJson);
+
+        /// Set a scalar value in a list object at an index.
+        void PutIdx(String objId, Int32 index, String scalarJson);
+
+        /// Create a nested object. objType: "map", "list", or "text".
+        /// Returns the new object's ID.
+        String PutObject(String objId, String key, String objType);
+
+        /// Delete a key from a map object.
+        void Delete(String objId, String key);
+
+        // ─── List operations ─────────────────────────────────────────────
+
+        /// Insert a scalar into a list. Pass Int32.MaxValue to append.
+        void Insert(String listObjId, Int32 index, String scalarJson);
+
+        /// Insert a nested object into a list. Returns new object ID.
+        String InsertObject(String listObjId, Int32 index, String objType);
+
+        /// Delete the element at an index from a list.
+        void DeleteAt(String listObjId, Int32 index);
+
+        // ─── Counter ─────────────────────────────────────────────────────
+
+        void PutCounter(String objId, String key, Int64 initialValue);
+        void Increment(String objId, String key, Int64 delta);
+
+        // ─── Text CRDT ───────────────────────────────────────────────────
+
+        void SpliceText(String textObjId, Int32 start, Int32 deleteCount, String text);
+
+        // ─── Commit ──────────────────────────────────────────────────────
+
+        void Commit(String message, Int64 timestamp);
+
+        // ─── Diff / patches ──────────────────────────────────────────────
+
+        String DiffIncremental();
     }
 
     // ─── SyncState ────────────────────────────────────────────────────────────
 
-    /// Maintains the state of a sync session with one remote peer.
     runtimeclass SyncState
     {
-        /// Create a fresh sync state (for the start of a new peer relationship).
         SyncState();
 
-        // ─── Protocol ────────────────────────────────────────────────────
-
-        /// Generate the next message to send to the remote peer.
-        /// Returns an empty buffer if sync is complete.
         Windows.Storage.Streams.IBuffer GenerateSyncMessage(Document doc);
-
-        /// Process a message received from the remote peer.
         void ReceiveSyncMessage(Document doc,
                                 Windows.Storage.Streams.IBuffer message);
 
-        // ─── Persistence ─────────────────────────────────────────────────
-
-        /// Serialize the sync state for optional persistence across sessions.
         Windows.Storage.Streams.IBuffer Save();
-
-        /// Load a sync state from persisted bytes.
         static SyncState Load(Windows.Storage.Streams.IBuffer data);
     }
 }

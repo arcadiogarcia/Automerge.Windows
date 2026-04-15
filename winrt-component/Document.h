@@ -7,7 +7,6 @@
 
 namespace winrt::Automerge::Windows::implementation {
 
-/// WinRT implementation of the Document runtime class.
 struct Document : DocumentT<Document>
 {
     Document();
@@ -16,6 +15,10 @@ struct Document : DocumentT<Document>
     winrt::Windows::Storage::Streams::IBuffer Save();
     static winrt::Automerge::Windows::Document Load(
         winrt::Windows::Storage::Streams::IBuffer const& data);
+    winrt::Windows::Storage::Streams::IBuffer SaveIncremental();
+
+    // Fork
+    winrt::Automerge::Windows::Document Fork();
 
     // Heads
     winrt::Windows::Storage::Streams::IBuffer GetHeads();
@@ -28,13 +31,46 @@ struct Document : DocumentT<Document>
     // Merge
     void Merge(winrt::Automerge::Windows::Document const& other);
 
+    // Actor
+    winrt::Windows::Storage::Streams::IBuffer GetActorId();
+    void SetActorId(winrt::Windows::Storage::Streams::IBuffer const& actorId);
+
     // Read
     hstring GetValue(hstring const& pathJson);
+    hstring Get(hstring const& objId, hstring const& key);
+    hstring GetIdx(hstring const& objId, int32_t index);
+    hstring GetKeysJson(hstring const& objId);
+    int32_t GetLength(hstring const& objId);
+    hstring GetText(hstring const& objId);
+    hstring GetAllJson(hstring const& objId, hstring const& key);
 
     // Write
     void PutJsonRoot(hstring const& jsonObj);
+    void Put(hstring const& objId, hstring const& key, hstring const& scalarJson);
+    void PutIdx(hstring const& objId, int32_t index, hstring const& scalarJson);
+    hstring PutObject(hstring const& objId, hstring const& key, hstring const& objType);
+    void Delete(hstring const& objId, hstring const& key);
 
-    // Internal access for SyncState
+    // List operations
+    void Insert(hstring const& listObjId, int32_t index, hstring const& scalarJson);
+    hstring InsertObject(hstring const& listObjId, int32_t index, hstring const& objType);
+    void DeleteAt(hstring const& listObjId, int32_t index);
+
+    // Counter
+    void PutCounter(hstring const& objId, hstring const& key, int64_t initialValue);
+    void Increment(hstring const& objId, hstring const& key, int64_t delta);
+
+    // Text CRDT
+    void SpliceText(hstring const& textObjId, int32_t start, int32_t deleteCount,
+                    hstring const& text);
+
+    // Commit
+    void Commit(hstring const& message, int64_t timestamp);
+
+    // Diff
+    hstring DiffIncremental();
+
+    // Internal
     ::automerge::Document& native_doc() noexcept { return doc_; }
 
 private:
