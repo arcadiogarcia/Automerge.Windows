@@ -79,4 +79,8 @@
   </ItemGroup>
   -->
 
+  <ItemGroup>
+    <PackageReference Include="System.Formats.Cbor" Version="9.0.0" />
+  </ItemGroup>
+
 </Project>
