@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ── Resolve version ───────────────────────────────────────────────────────
+      # -- Resolve version -------------------------------------------------------
       - name: Resolve version
         id: ver
         shell: pwsh
@@ -35,7 +35,7 @@ jobs:
           "VERSION=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "TAG=v$v"    | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── Rust ─────────────────────────────────────────────────────────────────
+      # -- Rust -----------------------------------------------------------------
       - name: Install Rust (stable x64 MSVC)
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -53,7 +53,7 @@ jobs:
           key: ${{ runner.os }}-cargo-release-${{ hashFiles('rust-core/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      # ── .NET ─────────────────────────────────────────────────────────────────
+      # -- .NET -----------------------------------------------------------------
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v4
         with:
@@ -62,7 +62,7 @@ jobs:
         uses: NuGet/setup-nuget@v2
         with:
           nuget-version: 'latest'
-      # ── x64 build: all layers + all 128 tests ────────────────────────────────
+      # -- x64 build: all layers + all 128 tests --------------------------------
       - name: Build x64 (all layers + tests)
         run: .\build.ps1 -Profile release -Arch x64
 
@@ -72,17 +72,17 @@ jobs:
             -p:Platform=x64 -p:RuntimeIdentifier=win-x64 `
             --logger "console;verbosity=normal"
 
-      # ── ARM64 build: cross-compile all layers, no test execution ─────────────
+      # -- ARM64 build: cross-compile all layers, no test execution -------------
       - name: Build ARM64 (cross-compile)
         run: .\build.ps1 -Profile release -Arch arm64 -SkipCsharp
 
-      # ── Build release-mode C# wrapper DLL ─────────────────────────────────────
+      # -- Build release-mode C# wrapper DLL -------------------------------------
       - name: Build C# wrapper (Release config)
         run: |
           dotnet build csharp-wrapper/AutomergeWindows.csproj `
             -c Release -p:RuntimeIdentifier=win-x64
 
-      # ── Package: C ABI (x64) ──────────────────────────────────────────────────
+      # -- Package: C ABI (x64) --------------------------------------------------
       - name: Package C ABI (x64)
         id: pkg_cabi_x64
         shell: pwsh
@@ -97,7 +97,7 @@ jobs:
           Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
           "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── Package: C ABI (arm64) ────────────────────────────────────────────────
+      # -- Package: C ABI (arm64) ------------------------------------------------
       - name: Package C ABI (arm64)
         id: pkg_cabi_arm64
         shell: pwsh
@@ -112,7 +112,7 @@ jobs:
           Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
           "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── Package: C++ wrapper (x64) ───────────────────────────────────────────
+      # -- Package: C++ wrapper (x64) -------------------------------------------
       - name: Package C++ wrapper (x64)
         id: pkg_cpp_x64
         shell: pwsh
@@ -129,7 +129,7 @@ jobs:
           Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
           "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── Package: C++ wrapper (arm64) ─────────────────────────────────────────
+      # -- Package: C++ wrapper (arm64) -----------------------------------------
       - name: Package C++ wrapper (arm64)
         id: pkg_cpp_arm64
         shell: pwsh
@@ -146,7 +146,7 @@ jobs:
           Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
           "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── Package: C# P/Invoke wrapper (x64) ───────────────────────────────────
+      # -- Package: C# P/Invoke wrapper (x64) -----------------------------------
       - name: Package C# P/Invoke wrapper (x64)
         id: pkg_csharp_x64
         shell: pwsh
@@ -163,7 +163,7 @@ jobs:
           Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
           "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── Package: C# P/Invoke wrapper (arm64) ─────────────────────────────────
+      # -- Package: C# P/Invoke wrapper (arm64) ---------------------------------
       - name: Package C# P/Invoke wrapper (arm64)
         id: pkg_csharp_arm64
         shell: pwsh
@@ -180,7 +180,7 @@ jobs:
           Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
           "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── Package: WinRT projection (x64) ──────────────────────────────────────
+      # -- Package: WinRT projection (x64) --------------------------------------
       - name: Package WinRT projection (x64)
         id: pkg_winrt_x64
         shell: pwsh
@@ -195,7 +195,7 @@ jobs:
           Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
           "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── Package: WinRT projection (arm64) ────────────────────────────────────
+      # -- Package: WinRT projection (arm64) ------------------------------------
       - name: Package WinRT projection (arm64)
         id: pkg_winrt_arm64
         shell: pwsh
@@ -210,7 +210,7 @@ jobs:
           Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
           "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── NuGet package: fat multi-arch (win-x64 + win-arm64 native DLLs) ───────
+      # -- NuGet package: fat multi-arch (win-x64 + win-arm64 native DLLs) -------
       - name: Pack NuGet package (multi-arch)
         id: pkg_nuget
         shell: pwsh
@@ -227,7 +227,7 @@ jobs:
           $nupkg = Get-ChildItem dist/nuget -Filter "*.nupkg" | Select-Object -First 1
           "FILE=dist/nuget/$($nupkg.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── NuGet package: WinRT projection (multi-arch) ─────────────────────
+      # -- NuGet package: WinRT projection (multi-arch) ---------------------
       - name: Pack WinRT NuGet (multi-arch)
         id: pkg_nuget_winrt
         shell: pwsh
@@ -294,21 +294,21 @@ jobs:
 
           | Package | Description |
           |---|---|
-          | ``Automerge.Windows.CSharp.$version.nupkg`` | C# P/Invoke wrapper — win-x64 + win-arm64 native DLLs bundled |
-          | ``Automerge.Windows.WinRT.$version.nupkg`` | WinRT projection — win-x64 + win-arm64 + CsWinRT integration |
+          | ``Automerge.Windows.CSharp.$version.nupkg`` | C# P/Invoke wrapper - win-x64 + win-arm64 native DLLs bundled |
+          | ``Automerge.Windows.WinRT.$version.nupkg`` | WinRT projection - win-x64 + win-arm64 + CsWinRT integration |
 
           ### Release artifacts (individual ZIPs)
 
           | File | Arch | Contents | Use when |
           |---|---|---|---|
-          | ``automerge-core-x64-$version.zip`` | x64 | ``automerge_core.dll``, import lib, ``automerge_core.h`` | C FFI — x64 |
-          | ``automerge-core-arm64-$version.zip`` | arm64 | ``automerge_core.dll``, import lib, ``automerge_core.h`` | C FFI — arm64 |
-          | ``automerge-cpp-x64-$version.zip`` | x64 | ``automerge_wrapper.lib``, headers, ``automerge_core.dll`` | Native C++ / vcpkg — x64 |
-          | ``automerge-cpp-arm64-$version.zip`` | arm64 | ``automerge_wrapper.lib``, headers, ``automerge_core.dll`` | Native C++ / vcpkg — arm64 |
-          | ``automerge-csharp-x64-$version.zip`` | x64 | ``AutomergeWindows.dll``, ``automerge_core.dll`` | .NET 9+ apps — x64 |
-          | ``automerge-csharp-arm64-$version.zip`` | arm64 | ``AutomergeWindows.dll``, ``automerge_core.dll`` | .NET 9+ apps — arm64 |
-          | ``automerge-winrt-x64-$version.zip`` | x64 | ``Automerge.Windows.dll``, ``.winmd``, ``automerge_core.dll`` | WinUI 3 — x64 |
-          | ``automerge-winrt-arm64-$version.zip`` | arm64 | ``Automerge.Windows.dll``, ``.winmd``, ``automerge_core.dll`` | WinUI 3 — arm64 |
+          | ``automerge-core-x64-$version.zip`` | x64 | ``automerge_core.dll``, import lib, ``automerge_core.h`` | C FFI - x64 |
+          | ``automerge-core-arm64-$version.zip`` | arm64 | ``automerge_core.dll``, import lib, ``automerge_core.h`` | C FFI - arm64 |
+          | ``automerge-cpp-x64-$version.zip`` | x64 | ``automerge_wrapper.lib``, headers, ``automerge_core.dll`` | Native C++ / vcpkg - x64 |
+          | ``automerge-cpp-arm64-$version.zip`` | arm64 | ``automerge_wrapper.lib``, headers, ``automerge_core.dll`` | Native C++ / vcpkg - arm64 |
+          | ``automerge-csharp-x64-$version.zip`` | x64 | ``AutomergeWindows.dll``, ``automerge_core.dll`` | .NET 9+ apps - x64 |
+          | ``automerge-csharp-arm64-$version.zip`` | arm64 | ``AutomergeWindows.dll``, ``automerge_core.dll`` | .NET 9+ apps - arm64 |
+          | ``automerge-winrt-x64-$version.zip`` | x64 | ``Automerge.Windows.dll``, ``.winmd``, ``automerge_core.dll`` | WinUI 3 - x64 |
+          | ``automerge-winrt-arm64-$version.zip`` | arm64 | ``Automerge.Windows.dll``, ``.winmd``, ``automerge_core.dll`` | WinUI 3 - arm64 |
 
           ### vcpkg (C++ overlay port)
           See ``ports/automerge-windows/`` in the repo. The portfile is updated with correct SHAs after each release.
@@ -321,8 +321,8 @@ jobs:
             --notes $notes `
             @files
 
-      # ── Publish NuGet packages to nuget.org ─────────────────────────────
-      # Requires NUGET_API_KEY secret: repo Settings → Secrets → Actions.
+      # -- Publish NuGet packages to nuget.org -----------------------------
+      # Requires NUGET_API_KEY secret: repo Settings -> Secrets -> Actions.
       # Get your API key from https://www.nuget.org/account/apikeys
       - name: Publish NuGet packages to nuget.org
         if: ${{ secrets.NUGET_API_KEY != '' }}
@@ -342,7 +342,7 @@ jobs:
             --source $source `
             --skip-duplicate
 
-      # ── Update vcpkg portfile SHAs and commit back to master ─────────────
+      # -- Update vcpkg portfile SHAs and commit back to master -------------
       - name: Update vcpkg portfile with release SHAs
         shell: pwsh
         run: |
