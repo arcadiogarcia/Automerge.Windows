@@ -71,7 +71,7 @@ jobs:
 
       # ── ARM64 build: cross-compile all layers, no test execution ─────────────
       - name: Build ARM64 (cross-compile)
-        run: .\build.ps1 -Profile release -Arch arm64
+        run: .\build.ps1 -Profile release -Arch arm64 -SkipCsharp
 
       # ── Build release-mode C# wrapper DLL ─────────────────────────────────────
       - name: Build C# wrapper (Release config)
