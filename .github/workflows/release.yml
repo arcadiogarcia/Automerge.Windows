@@ -17,6 +17,8 @@ permissions:
 jobs:
   release:
     runs-on: windows-2022
+    env:
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
 
     steps:
       - uses: actions/checkout@v4
@@ -325,9 +327,7 @@ jobs:
       # Requires NUGET_API_KEY secret: repo Settings -> Secrets -> Actions.
       # Get your API key from https://www.nuget.org/account/apikeys
       - name: Publish NuGet packages to nuget.org
-        if: ${{ secrets.NUGET_API_KEY != '' }}
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        if: ${{ env.NUGET_API_KEY != '' }}
         shell: pwsh
         run: |
           $source = "https://api.nuget.org/v3/index.json"
