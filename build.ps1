@@ -46,7 +46,10 @@ function Find-VCVarsAll {
     # VS 2019 Build Tools, VS 2022 Community, VS 2026 Community are all checked.
     $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
     $searchPaths = @(
-        # Explicit known location for VS 2019 Build Tools (frequently has vcvarsall.bat when others don't)
+        # Enterprise/Professional first — matches GitHub Actions windows-2022 runner
+        "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat",
+        "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvarsall.bat",
+        # Build Tools and Community
         "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvarsall.bat",
         "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat",
         "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat",
@@ -66,7 +69,8 @@ function Find-VCVarsAll {
 
 $vcvarsAll = Find-VCVarsAll
 if (-not $vcvarsAll) { Err "vcvarsall.bat not found. Ensure VS 2019 Build Tools or a full VS installation is present." }
-$vsPath = Split-Path (Split-Path (Split-Path $vcvarsAll))
+# vcvarsall.bat lives at VS_ROOT\VC\Auxiliary\Build\vcvarsall.bat  (4 levels deep)
+$vsPath = Split-Path (Split-Path (Split-Path (Split-Path $vcvarsAll)))
 Ok "Using toolchain from: $vsPath"
 
 # Set up MSVC x64 environment variables (equivalent to vcvarsall.bat x64)
