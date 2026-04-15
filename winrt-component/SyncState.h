@@ -3,8 +3,7 @@
 
 #include "pch.h"
 #include "Helpers.hpp"
-#include "winrt/Automerge.Windows.h"
-#include "Automerge.Windows.g.h"
+#include "SyncState.g.h"
 
 namespace winrt::Automerge::Windows::implementation {
 
@@ -13,17 +12,17 @@ struct SyncState : SyncStateT<SyncState>
     SyncState();
 
     // Protocol
-    Windows::Storage::Streams::IBuffer GenerateSyncMessage(
-        Automerge::Windows::Document const& doc);
+    winrt::Windows::Storage::Streams::IBuffer GenerateSyncMessage(
+        winrt::Automerge::Windows::Document const& doc);
 
     void ReceiveSyncMessage(
-        Automerge::Windows::Document const& doc,
-        Windows::Storage::Streams::IBuffer const& message);
+        winrt::Automerge::Windows::Document const& doc,
+        winrt::Windows::Storage::Streams::IBuffer const& message);
 
     // Persistence
-    Windows::Storage::Streams::IBuffer Save();
-    static Automerge::Windows::SyncState Load(
-        Windows::Storage::Streams::IBuffer const& data);
+    winrt::Windows::Storage::Streams::IBuffer Save();
+    static winrt::Automerge::Windows::SyncState Load(
+        winrt::Windows::Storage::Streams::IBuffer const& data);
 
 private:
     ::automerge::SyncState state_;

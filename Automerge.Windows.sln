@@ -1,0 +1,60 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "winrt-component", "winrt-component", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "winrt-component", "winrt-component\winrt-component.vcxproj", "{3F8A1C2D-4E7B-4F9C-A2D3-B5E6F7A8C9D0}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "csharp-wrapper", "csharp-wrapper", "{E30BAE64-2D8F-709F-46AA-94F1413C6E2A}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutomergeWindows", "csharp-wrapper\AutomergeWindows.csproj", "{EACAC4D9-8CDB-1E5A-7C74-A8EBC217E566}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "csharp", "csharp", "{15695F5E-2B16-82CE-E41C-1B8759B646DE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutomergeTests", "tests\csharp\AutomergeTests.csproj", "{B82437B4-3183-1A9C-E2ED-1A8FEFEBF6CA}"
+EndProject
+Global
+GlobalSection(SolutionConfigurationPlatforms) = preSolution
+Debug|Any CPU = Debug|Any CPU
+Debug|x64 = Debug|x64
+Release|Any CPU = Release|Any CPU
+Release|x64 = Release|x64
+EndGlobalSection
+GlobalSection(ProjectConfigurationPlatforms) = postSolution
+{3F8A1C2D-4E7B-4F9C-A2D3-B5E6F7A8C9D0}.Debug|Any CPU.ActiveCfg = Debug|x64
+{3F8A1C2D-4E7B-4F9C-A2D3-B5E6F7A8C9D0}.Debug|Any CPU.Build.0 = Debug|x64
+{3F8A1C2D-4E7B-4F9C-A2D3-B5E6F7A8C9D0}.Debug|x64.ActiveCfg = Debug|x64
+{3F8A1C2D-4E7B-4F9C-A2D3-B5E6F7A8C9D0}.Debug|x64.Build.0 = Debug|x64
+{3F8A1C2D-4E7B-4F9C-A2D3-B5E6F7A8C9D0}.Release|Any CPU.ActiveCfg = Release|x64
+{3F8A1C2D-4E7B-4F9C-A2D3-B5E6F7A8C9D0}.Release|Any CPU.Build.0 = Release|x64
+{3F8A1C2D-4E7B-4F9C-A2D3-B5E6F7A8C9D0}.Release|x64.ActiveCfg = Release|x64
+{3F8A1C2D-4E7B-4F9C-A2D3-B5E6F7A8C9D0}.Release|x64.Build.0 = Release|x64
+{EACAC4D9-8CDB-1E5A-7C74-A8EBC217E566}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+{EACAC4D9-8CDB-1E5A-7C74-A8EBC217E566}.Debug|Any CPU.Build.0 = Debug|Any CPU
+{EACAC4D9-8CDB-1E5A-7C74-A8EBC217E566}.Debug|x64.ActiveCfg = Debug|Any CPU
+{EACAC4D9-8CDB-1E5A-7C74-A8EBC217E566}.Release|Any CPU.ActiveCfg = Release|Any CPU
+{EACAC4D9-8CDB-1E5A-7C74-A8EBC217E566}.Release|Any CPU.Build.0 = Release|Any CPU
+{EACAC4D9-8CDB-1E5A-7C74-A8EBC217E566}.Release|x64.ActiveCfg = Release|Any CPU
+{B82437B4-3183-1A9C-E2ED-1A8FEFEBF6CA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+{B82437B4-3183-1A9C-E2ED-1A8FEFEBF6CA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+{B82437B4-3183-1A9C-E2ED-1A8FEFEBF6CA}.Debug|x64.ActiveCfg = Debug|Any CPU
+{B82437B4-3183-1A9C-E2ED-1A8FEFEBF6CA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+{B82437B4-3183-1A9C-E2ED-1A8FEFEBF6CA}.Release|Any CPU.Build.0 = Release|Any CPU
+{B82437B4-3183-1A9C-E2ED-1A8FEFEBF6CA}.Release|x64.ActiveCfg = Release|Any CPU
+EndGlobalSection
+GlobalSection(SolutionProperties) = preSolution
+HideSolutionNode = FALSE
+EndGlobalSection
+GlobalSection(NestedProjects) = preSolution
+{3F8A1C2D-4E7B-4F9C-A2D3-B5E6F7A8C9D0} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
+{EACAC4D9-8CDB-1E5A-7C74-A8EBC217E566} = {E30BAE64-2D8F-709F-46AA-94F1413C6E2A}
+{15695F5E-2B16-82CE-E41C-1B8759B646DE} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+{B82437B4-3183-1A9C-E2ED-1A8FEFEBF6CA} = {15695F5E-2B16-82CE-E41C-1B8759B646DE}
+EndGlobalSection
+GlobalSection(ExtensibilityGlobals) = preSolution
+SolutionGuid = {98237797-13D6-4701-B4F6-5A4214265685}
+EndGlobalSection
+EndGlobal

@@ -107,4 +107,61 @@ public class ChangesAndMergeTests
         Assert.Equal("\"peer2_val\"", peer1.GetValue("""["peer2_key"]"""));
         Assert.Equal("1", peer1.GetValue("""["shared"]"""));
     }
+
+    // ─── CRDT: Concurrent writes to the same key ──────────────────────────────
+
+    [Fact]
+    public void ConcurrentSameKey_Merge_BothConvergeToSameValue()
+    {
+        // Both peers start from a shared snapshot, each writes the same key with
+        // a different value. After bidirectional merge both must see the same
+        // deterministic CRDT-resolved value.
+        using var origin = new Document();
+        origin.PutJsonRoot("""{"shared":0}""");
+        var snap = origin.Save();
+
+        using var docA = Document.Load(snap);
+        using var docB = Document.Load(snap);
+        docA.PutJsonRoot("""{"shared":"from_a"}""");
+        docB.PutJsonRoot("""{"shared":"from_b"}""");
+
+        docA.Merge(docB);
+        docB.Merge(docA);
+
+        var valA = docA.GetValue("""["shared"]""");
+        var valB = docB.GetValue("""["shared"]""");
+        Assert.Equal(valA, valB);
+        Assert.True(valA == "\"from_a\"" || valA == "\"from_b\"",
+            $"winner must be one of the inputs, got: {valA}");
+        Assert.Equal(docA.GetHeads(), docB.GetHeads());
+    }
+
+    // ─── Incremental delta excludes prior history ─────────────────────────────
+
+    [Fact]
+    public void IncrementalDelta_OnlyContainsNewChanges()
+    {
+        // Build origin in two steps: add "a" first (snapshot), then add "b".
+        using var doc = new Document();
+        doc.PutJsonRoot("""{"a":1}""");
+        var snapV1  = doc.Save();
+        var headsV1 = doc.GetHeads();
+
+        doc.PutJsonRoot("""{"b":2}""");
+        var delta = doc.GetChanges(headsV1);
+        Assert.NotEmpty(delta);
+
+        // Full history must be longer than the delta.
+        var full = doc.GetChanges();
+        Assert.True(delta.Length < full.Length, "delta must be smaller than full history");
+
+        // Apply only the delta to a peer pre-loaded with the v1 snapshot so its
+        // causal dependency (the change for "a") is already satisfied.
+        using var peer = Document.Load(snapV1);
+        peer.ApplyChanges(delta);
+
+        // Peer should have "a" (from v1 baseline) and "b" (from delta).
+        Assert.Equal("1", peer.GetValue("""["a"]"""));
+        Assert.Equal("2", peer.GetValue("""["b"]"""));
+    }
 }

@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  winrt-component.vcxproj
+  Windows Runtime Component for Automerge.Windows.
+  Targets x64, uses VS 2022 toolset (v143).
+
+  Build order:
+    1. MIDL compiles Automerge.Windows.idl -> Automerge.Windows.winmd
+    2. CustomBuild step runs cppwinrt.exe -> generated/ headers + module.g.cpp
+    3. ClCompile builds pch.cpp, Document.cpp, SyncState.cpp, module.g.cpp
+    4. Link produces Automerge.Windows.dll
+
+  Prerequisites (build these first via build.ps1 or CMake):
+    build\automerge_wrapper.lib  (C++ RAII wrapper, static)
+    rust-core\target\release\automerge_core.dll + automerge_core.dll.lib
+-->
+<Project DefaultTargets="Build" ToolsVersion="Current"
+         xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- ─── Configurations ──────────────────────────────────────────────────── -->
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <!-- ─── Globals ─────────────────────────────────────────────────────────── -->
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>Current</VCProjectVersion>
+    <ProjectGuid>{3F8A1C2D-4E7B-4F9C-A2D3-B5E6F7A8C9D0}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>AutomergeWindows</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <DefaultLanguage>en-US</DefaultLanguage>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <!-- ─── Configuration properties ───────────────────────────────────────── -->
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <!-- v142 = VS 2019 / MSVC 14.29 (has full vcvarsall.bat and proper x64 libs) -->
+    <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"
+            Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')"
+            Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"
+            Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')"
+            Label="LocalAppDataPlatform" />
+  </ImportGroup>
+
+  <PropertyGroup Label="UserMacros" />
+
+  <!-- ─── Output / intermediate paths ────────────────────────────────────── -->
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)build-winrt\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)build-winrt\$(Configuration)\int\</IntDir>
+    <TargetName>Automerge.Windows</TargetName>
+    <TargetExt>.dll</TargetExt>
+    <GeneratedFilesDir>$(IntDir)generated\</GeneratedFilesDir>
+  </PropertyGroup>
+
+  <!-- ─── Compile settings ────────────────────────────────────────────────── -->
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>false</SDLCheck>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;NOMINMAX;WIN32_LEAN_AND_MEAN;WINRT_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(GeneratedFilesDir);$(ProjectDir);$(ProjectDir)..\cpp-wrapper\include;$(ProjectDir)..\rust-core\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Midl>
+      <!-- WinRT MIDL: /winrt flag produces .winmd instead of proxy/stub code -->
+      <AdditionalOptions>/winrt /error all %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(WindowsSdkDir)Include\$(TargetPlatformVersion)\winrt;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalMetadataDirectories>$(WindowsSdkDir)References\$(TargetPlatformVersion);%(AdditionalMetadataDirectories)</AdditionalMetadataDirectories>
+      <OutputDirectory>$(IntDir)</OutputDirectory>
+      <MetadataFileName>%(Filename).winmd</MetadataFileName>
+      <HeaderFileName>%(Filename)_midl.h</HeaderFileName>
+      <DllDataFileName>NUL</DllDataFileName>
+      <InterfaceIdentifierFileName>NUL</InterfaceIdentifierFileName>
+      <ProxyFileName>NUL</ProxyFileName>
+    </Midl>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>RuntimeObject.lib;ole32.lib;oleaut32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)build;$(SolutionDir)rust-core\target\debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>false</SDLCheck>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;NOMINMAX;WIN32_LEAN_AND_MEAN;WINRT_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(GeneratedFilesDir);$(ProjectDir);$(ProjectDir)..\cpp-wrapper\include;$(ProjectDir)..\rust-core\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Midl>
+      <AdditionalOptions>/winrt /error all %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(WindowsSdkDir)Include\$(TargetPlatformVersion)\winrt;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalMetadataDirectories>$(WindowsSdkDir)References\$(TargetPlatformVersion);%(AdditionalMetadataDirectories)</AdditionalMetadataDirectories>
+      <OutputDirectory>$(IntDir)</OutputDirectory>
+      <MetadataFileName>%(Filename).winmd</MetadataFileName>
+      <HeaderFileName>%(Filename)_midl.h</HeaderFileName>
+      <DllDataFileName>NUL</DllDataFileName>
+      <InterfaceIdentifierFileName>NUL</InterfaceIdentifierFileName>
+      <ProxyFileName>NUL</ProxyFileName>
+    </Midl>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <AdditionalDependencies>RuntimeObject.lib;ole32.lib;oleaut32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)build;$(SolutionDir)rust-core\target\release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- ─── Source files ────────────────────────────────────────────────────── -->
+  <ItemGroup>
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="Document.h" />
+    <ClInclude Include="SyncState.h" />
+    <ClInclude Include="Helpers.hpp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- pch.cpp creates the precompiled header -->
+    <ClCompile Include="pch.cpp">
+      <PrecompiledHeader>Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Document.cpp" />
+    <ClCompile Include="SyncState.cpp" />
+    <!-- module.g.cpp is generated by cppwinrt; compiled without /Yu pch -->
+    <ClCompile Include="$(GeneratedFilesDir)module.g.cpp">
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <FileType>CppCode</FileType>
+    </ClCompile>
+  </ItemGroup>
+
+  <!-- ─── IDL file → MIDL → .winmd ────────────────────────────────────────── -->
+  <ItemGroup>
+    <Midl Include="Automerge.Windows.idl" />
+  </ItemGroup>
+
+  <!-- ─── cppwinrt custom build step (runs after MIDL) ───────────────────── -->
+  <!--
+    After MIDL produces $(IntDir)Automerge.Windows.winmd, we run cppwinrt.exe
+    to generate projection headers and module.g.cpp in $(GeneratedFilesDir).
+  -->
+  <ItemGroup>
+    <CustomBuild Include="$(IntDir)Automerge.Windows.winmd">
+      <Message>cppwinrt: generating C++/WinRT projection headers</Message>
+      <Command>"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\cppwinrt.exe" -in "%(FullPath)" -ref windows -out "$(GeneratedFilesDir)" -comp "$(GeneratedFilesDir)"</Command>
+      <Outputs>$(GeneratedFilesDir)module.g.cpp;$(GeneratedFilesDir)Automerge.Windows.g.h</Outputs>
+      <AdditionalInputs>%(FullPath)</AdditionalInputs>
+    </CustomBuild>
+  </ItemGroup>
+
+  <!-- Additional libs for the Rust cdylib import library -->
+  <ItemGroup>
+    <Library Include="$(SolutionDir)rust-core\target\$(Configuration)\automerge_core.dll.lib"
+             Condition="'$(Configuration)'=='Debug'" />
+    <Library Include="$(SolutionDir)rust-core\target\release\automerge_core.dll.lib"
+             Condition="'$(Configuration)'=='Release'" />
+    <Library Include="$(SolutionDir)build\automerge_wrapper.lib" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+
+</Project>

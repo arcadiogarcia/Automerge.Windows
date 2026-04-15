@@ -1,0 +1,203 @@
+name: Release
+
+# Triggered by pushing a version tag (e.g. git tag v1.0.0 && git push --tags)
+# or manually for pre-releases / hot-fixes.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version without "v" prefix (e.g. 1.0.0)'
+        required: true
+
+permissions:
+  contents: write   # required to create GitHub Releases and upload assets
+
+jobs:
+  release:
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Resolve version ───────────────────────────────────────────────────────
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: |
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $v = '${{ github.event.inputs.version }}'
+          } else {
+            $v = '${{ github.ref_name }}' -replace '^v', ''
+          }
+          Write-Host "Version: $v"
+          "VERSION=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "TAG=v$v"    | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # ── Rust ─────────────────────────────────────────────────────────────────
+      - name: Install Rust (stable x64 MSVC)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            rust-core/target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('rust-core/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      # ── .NET ─────────────────────────────────────────────────────────────────
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.x'
+
+      # ── Full build + all 128 tests ────────────────────────────────────────────
+      - name: Build all layers and run tests
+        run: .\build.ps1 -Profile release
+
+      - name: Run WinRT projection tests
+        run: |
+          dotnet test tests/winrt/AutomergeWinRTTests.csproj `
+            -p:Platform=x64 -p:RuntimeIdentifier=win-x64 `
+            --logger "console;verbosity=normal"
+
+      # ── Build release-mode C# wrapper DLL ─────────────────────────────────────
+      - name: Build C# wrapper (Release config)
+        run: |
+          dotnet build csharp-wrapper/AutomergeWindows.csproj `
+            -c Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64
+
+      # ── Package: C ABI ────────────────────────────────────────────────────────
+      # automerge_core.dll  automerge_core.dll.lib  automerge_core.h
+      - name: Package C ABI
+        id: pkg_cabi
+        shell: pwsh
+        run: |
+          $v   = '${{ steps.ver.outputs.VERSION }}'
+          $dir = "dist\cabi"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Copy-Item rust-core/target/release/automerge_core.dll     $dir/
+          Copy-Item rust-core/target/release/automerge_core.dll.lib $dir/
+          Copy-Item rust-core/include/automerge_core.h              $dir/
+          $zip = "dist\automerge-core-x64-$v.zip"
+          Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
+          "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # ── Package: C++ wrapper ──────────────────────────────────────────────────
+      # automerge_wrapper.lib  automerge_core.dll(.lib)  include/ headers
+      - name: Package C++ wrapper
+        id: pkg_cpp
+        shell: pwsh
+        run: |
+          $v   = '${{ steps.ver.outputs.VERSION }}'
+          $dir = "dist\cpp"
+          New-Item -ItemType Directory -Force "$dir\include" | Out-Null
+          Copy-Item rust-core/target/release/automerge_core.dll     $dir/
+          Copy-Item rust-core/target/release/automerge_core.dll.lib $dir/
+          Copy-Item build/automerge_wrapper.lib                      $dir/
+          Copy-Item rust-core/include/automerge_core.h               "$dir\include\"
+          Copy-Item -Recurse cpp-wrapper/include/automerge            "$dir\include\automerge"
+          $zip = "dist\automerge-cpp-x64-$v.zip"
+          Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
+          "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # ── Package: C# P/Invoke wrapper ─────────────────────────────────────────
+      # AutomergeWindows.dll  AutomergeWindows.xml (docs)  automerge_core.dll
+      - name: Package C# P/Invoke wrapper
+        id: pkg_csharp
+        shell: pwsh
+        run: |
+          $v   = '${{ steps.ver.outputs.VERSION }}'
+          $dir = "dist\csharp"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $dllSrc = Get-ChildItem "csharp-wrapper/bin/x64/Release" -Recurse -Filter "AutomergeWindows.dll" |
+                    Select-Object -First 1
+          Copy-Item $dllSrc.FullName $dir/
+          $xmlSrc = Get-ChildItem "csharp-wrapper/bin/x64/Release" -Recurse -Filter "AutomergeWindows.xml" |
+                    Select-Object -First 1
+          if ($xmlSrc) { Copy-Item $xmlSrc.FullName $dir/ }
+          Copy-Item rust-core/target/release/automerge_core.dll $dir/
+          $zip = "dist\automerge-csharp-x64-$v.zip"
+          Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
+          "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # ── Package: WinRT projection ─────────────────────────────────────────────
+      # Automerge.Windows.dll  Automerge.Windows.winmd  automerge_core.dll
+      - name: Package WinRT projection
+        id: pkg_winrt
+        shell: pwsh
+        run: |
+          $v   = '${{ steps.ver.outputs.VERSION }}'
+          $dir = "dist\winrt"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Copy-Item build-winrt/release/Automerge.Windows.dll  $dir/
+          Copy-Item build-winrt/release/Automerge.Windows.winmd $dir/
+          Copy-Item rust-core/target/release/automerge_core.dll $dir/
+          $zip = "dist\automerge-winrt-x64-$v.zip"
+          Compress-Archive -Path "$dir\*" -DestinationPath $zip -Force
+          "FILE=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # ── NuGet package (C# P/Invoke wrapper) ───────────────────────────────────
+      # runtimes/win-x64/native/automerge_core.dll packaged alongside the
+      # managed DLL so consumers only need to add the NuGet reference.
+      - name: Pack NuGet package
+        id: pkg_nuget
+        shell: pwsh
+        run: |
+          $v       = '${{ steps.ver.outputs.VERSION }}'
+          $nativePath = (Resolve-Path "rust-core/target/release").Path
+          dotnet pack csharp-wrapper/AutomergeWindows.csproj `
+            -c Release `
+            -p:Platform=x64 `
+            -p:RuntimeIdentifier=win-x64 `
+            -p:PackageVersion=$v `
+            -p:NativeDllPath=$nativePath `
+            -o dist/nuget
+          $nupkg = Get-ChildItem dist/nuget -Filter "*.nupkg" | Select-Object -First 1
+          "FILE=dist/nuget/$($nupkg.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # ── GitHub Release ────────────────────────────────────────────────────────
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag     = '${{ steps.ver.outputs.TAG }}'
+          $version = '${{ steps.ver.outputs.VERSION }}'
+          $files   = @(
+            '${{ steps.pkg_cabi.outputs.FILE }}',
+            '${{ steps.pkg_cpp.outputs.FILE }}',
+            '${{ steps.pkg_csharp.outputs.FILE }}',
+            '${{ steps.pkg_winrt.outputs.FILE }}',
+            '${{ steps.pkg_nuget.outputs.FILE }}'
+          )
+
+          $notes = @"
+          ## Automerge.Windows $version
+
+          All 128 tests passing (33 Rust + 39 C++ + 38 C# + 18 WinRT).
+
+          ### Release artifacts
+
+          | File | Contents | Use when |
+          |---|---|---|
+          | ``automerge-core-x64-$version.zip`` | ``automerge_core.dll``, import lib, ``automerge_core.h`` | C FFI (any language) |
+          | ``automerge-cpp-x64-$version.zip`` | ``automerge_wrapper.lib``, all headers, ``automerge_core.dll`` | Native C++ |
+          | ``automerge-csharp-x64-$version.zip`` | ``AutomergeWindows.dll``, ``automerge_core.dll`` | .NET 9+ apps |
+          | ``automerge-winrt-x64-$version.zip`` | ``Automerge.Windows.dll``, ``.winmd``, ``automerge_core.dll`` | WinUI 3 / Windows App SDK |
+          | ``Automerge.Windows.$version.nupkg`` | NuGet package with native DLL bundled | NuGet consumers |
+
+          See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) for full usage instructions per layer.
+          "@
+
+          gh release create $tag `
+            --title "Automerge.Windows $version" `
+            --notes $notes `
+            @files

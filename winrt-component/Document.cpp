@@ -11,7 +11,7 @@ Document::Document() : doc_() {}
 
 // ─── Persistence ─────────────────────────────────────────────────────────────
 
-Windows::Storage::Streams::IBuffer Document::Save() {
+winrt::Windows::Storage::Streams::IBuffer Document::Save() {
     try {
         return bytes_to_ibuffer(doc_.save());
     } catch (const std::exception& ex) {
@@ -19,13 +19,13 @@ Windows::Storage::Streams::IBuffer Document::Save() {
     }
 }
 
-Automerge::Windows::Document Document::Load(
-    Windows::Storage::Streams::IBuffer const& data)
+winrt::Automerge::Windows::Document Document::Load(
+    winrt::Windows::Storage::Streams::IBuffer const& data)
 {
     try {
         auto bytes = ibuffer_to_bytes(data);
         auto impl = winrt::make<implementation::Document>();
-        as<implementation::Document>(impl).doc_ =
+        winrt::get_self<implementation::Document>(impl)->doc_ =
             ::automerge::Document::load(bytes);
         return impl;
     } catch (const std::exception& ex) {
@@ -35,7 +35,7 @@ Automerge::Windows::Document Document::Load(
 
 // ─── Heads ───────────────────────────────────────────────────────────────────
 
-Windows::Storage::Streams::IBuffer Document::GetHeads() {
+winrt::Windows::Storage::Streams::IBuffer Document::GetHeads() {
     try {
         return bytes_to_ibuffer(doc_.get_heads());
     } catch (const std::exception& ex) {
@@ -45,8 +45,8 @@ Windows::Storage::Streams::IBuffer Document::GetHeads() {
 
 // ─── Changes ─────────────────────────────────────────────────────────────────
 
-Windows::Storage::Streams::IBuffer Document::GetChanges(
-    Windows::Storage::Streams::IBuffer const& heads)
+winrt::Windows::Storage::Streams::IBuffer Document::GetChanges(
+    winrt::Windows::Storage::Streams::IBuffer const& heads)
 {
     try {
         auto h = ibuffer_to_bytes(heads);
@@ -56,7 +56,7 @@ Windows::Storage::Streams::IBuffer Document::GetChanges(
     }
 }
 
-void Document::ApplyChanges(Windows::Storage::Streams::IBuffer const& changes) {
+void Document::ApplyChanges(winrt::Windows::Storage::Streams::IBuffer const& changes) {
     try {
         auto ch = ibuffer_to_bytes(changes);
         doc_.apply_changes(ch);
@@ -67,10 +67,10 @@ void Document::ApplyChanges(Windows::Storage::Streams::IBuffer const& changes) {
 
 // ─── Merge ───────────────────────────────────────────────────────────────────
 
-void Document::Merge(Automerge::Windows::Document const& other) {
+void Document::Merge(winrt::Automerge::Windows::Document const& other) {
     try {
         // other is the WinRT projected type; extract the implementation.
-        auto& other_impl = winrt::get_self<implementation::Document>(other);
+        auto other_impl = winrt::get_self<implementation::Document>(other);
         doc_.merge(other_impl->native_doc());
     } catch (const std::exception& ex) {
         throw_winrt_error(ex);

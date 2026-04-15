@@ -11,8 +11,8 @@ SyncState::SyncState() : state_() {}
 
 // ─── Protocol ────────────────────────────────────────────────────────────────
 
-Windows::Storage::Streams::IBuffer SyncState::GenerateSyncMessage(
-    Automerge::Windows::Document const& doc)
+winrt::Windows::Storage::Streams::IBuffer SyncState::GenerateSyncMessage(
+    winrt::Automerge::Windows::Document const& doc)
 {
     try {
         auto& doc_impl = *winrt::get_self<implementation::Document>(doc);
@@ -24,8 +24,8 @@ Windows::Storage::Streams::IBuffer SyncState::GenerateSyncMessage(
 }
 
 void SyncState::ReceiveSyncMessage(
-    Automerge::Windows::Document const& doc,
-    Windows::Storage::Streams::IBuffer const& message)
+    winrt::Automerge::Windows::Document const& doc,
+    winrt::Windows::Storage::Streams::IBuffer const& message)
 {
     try {
         auto& doc_impl = *winrt::get_self<implementation::Document>(doc);
@@ -38,7 +38,7 @@ void SyncState::ReceiveSyncMessage(
 
 // ─── Persistence ─────────────────────────────────────────────────────────────
 
-Windows::Storage::Streams::IBuffer SyncState::Save() {
+winrt::Windows::Storage::Streams::IBuffer SyncState::Save() {
     try {
         return bytes_to_ibuffer(state_.save());
     } catch (const std::exception& ex) {
@@ -46,8 +46,8 @@ Windows::Storage::Streams::IBuffer SyncState::Save() {
     }
 }
 
-Automerge::Windows::SyncState SyncState::Load(
-    Windows::Storage::Streams::IBuffer const& data)
+winrt::Automerge::Windows::SyncState SyncState::Load(
+    winrt::Windows::Storage::Streams::IBuffer const& data)
 {
     try {
         auto bytes = ibuffer_to_bytes(data);

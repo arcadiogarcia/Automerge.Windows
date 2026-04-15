@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Rust ─────────────────────────────────────────────────────────────────
+      - name: Install Rust (stable x64 MSVC)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            rust-core/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust-core/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      # ── .NET ─────────────────────────────────────────────────────────────────
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.x'
+
+      # ── Build all layers + run Rust / C++ / C# tests ─────────────────────────
+      # build.ps1 runs: Rust build → Rust tests → C++ build+test → WinRT build
+      #                 → C# P/Invoke tests
+      - name: Build all layers and run tests
+        run: .\build.ps1 -Profile release
+
+      # ── WinRT projection tests ────────────────────────────────────────────────
+      - name: Run WinRT projection tests
+        run: |
+          dotnet test tests/winrt/AutomergeWinRTTests.csproj `
+            -p:Platform=x64 -p:RuntimeIdentifier=win-x64 `
+            --logger "console;verbosity=normal"
+
+      # ── Upload built artifacts for inspection / downstream use ───────────────
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-outputs-${{ github.sha }}
+          retention-days: 7
+          path: |
+            rust-core/target/release/automerge_core.dll
+            rust-core/target/release/automerge_core.dll.lib
+            build/automerge_wrapper.lib
+            build-winrt/release/Automerge.Windows.dll
+            build-winrt/release/Automerge.Windows.winmd

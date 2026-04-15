@@ -1,0 +1,7 @@
+-target net8.0
+-input 10.0.26100.0
+-input "D:\Automerge.Windows\build-winrt\release\Automerge.Windows.winmd"
+-output "Generated Files"
+
+-exclude Windows
+-exclude Microsoft

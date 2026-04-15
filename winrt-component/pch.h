@@ -2,8 +2,7 @@
 #pragma once
 
 // Windows / WinRT
-#define NOMINMAX
-#define WIN32_LEAN_AND_MEAN
+// (NOMINMAX and WIN32_LEAN_AND_MEAN are injected by the build system via /D flags)
 #include <windows.h>
 
 // C++/WinRT core
@@ -11,6 +10,10 @@
 #include <winrt/base.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Storage.Streams.h>
+
+// Bring the entire winrt namespace into scope — standard C++/WinRT component
+// practice so that component headers can use Windows::... shorthand.
+using namespace winrt;
 
 // C++ standard library
 #include <array>

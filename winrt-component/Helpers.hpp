@@ -30,7 +30,7 @@ inline winrt::Windows::Storage::Streams::IBuffer bytes_to_ibuffer(
     std::span<const uint8_t> bytes)
 {
     winrt::Windows::Storage::Streams::DataWriter writer;
-    writer.WriteBytes(bytes);
+    writer.WriteBytes({ bytes.data(), static_cast<uint32_t>(bytes.size()) });
     return writer.DetachBuffer();
 }
 

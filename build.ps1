@@ -12,6 +12,9 @@
 .PARAMETER SkipCsharp
     Skip C# dotnet build.
 
+.PARAMETER SkipWinRT
+    Skip WinRT component build.
+
 .PARAMETER TestOnly
     Run tests without rebuilding.
 #>
@@ -20,9 +23,11 @@ param(
     [string]$Profile = "release",
     [switch]$SkipCpp,
     [switch]$SkipCsharp,
+    [switch]$SkipWinRT,
     [switch]$TestOnly
 )
 
+$ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 
 function Step($name) { Write-Host "`n=== $name ===" -ForegroundColor Cyan }
@@ -34,16 +39,67 @@ function Run {
     if ($LASTEXITCODE -ne 0) { Err "$Exe failed with exit code $LASTEXITCODE" }
 }
 
-# Configure PATH
-$env:PATH = "C:\Users\arcad\.cargo\bin;C:\Program Files\CMake\bin;C:\Program Files\LLVM\bin;C:\llvm-mingw\llvm-mingw-20260407-ucrt-aarch64\bin;C:\Users\arcad\AppData\Local\ninja;" + $env:PATH
+# ─── Locate Visual Studio ──────────────────────────────────────────────────────
 
-$gnullvm = "stable-aarch64-pc-windows-gnullvm"
+function Find-VCVarsAll {
+    # Search for vcvarsall.bat across all VS installations, including Build Tools.
+    # VS 2019 Build Tools, VS 2022 Community, VS 2026 Community are all checked.
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    $searchPaths = @(
+        # Explicit known location for VS 2019 Build Tools (frequently has vcvarsall.bat when others don't)
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvarsall.bat",
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat",
+        "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat",
+        "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvarsall.bat"
+    )
+    foreach ($p in $searchPaths) { if (Test-Path $p) { return $p } }
+    # Fallback: use vswhere to find any VS with vcvarsall.bat
+    if (Test-Path $vswhere) {
+        $allPaths = & $vswhere -all -products * -property installationPath 2>$null
+        foreach ($vp in $allPaths) {
+            $candidate = "$vp\VC\Auxiliary\Build\vcvarsall.bat"
+            if (Test-Path $candidate) { return $candidate }
+        }
+    }
+    return $null
+}
 
-# 1. Rust C ABI
+$vcvarsAll = Find-VCVarsAll
+if (-not $vcvarsAll) { Err "vcvarsall.bat not found. Ensure VS 2019 Build Tools or a full VS installation is present." }
+$vsPath = Split-Path (Split-Path (Split-Path $vcvarsAll))
+Ok "Using toolchain from: $vsPath"
+
+# Set up MSVC x64 environment variables (equivalent to vcvarsall.bat x64)
+function Setup-VCEnv {
+    $envDump = cmd /c "`"$vcvarsAll`" x64 > NUL 2>&1 && set"
+    foreach ($line in $envDump) {
+        if ($line -match "^([^=]+)=(.*)$") {
+            [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2])
+            Set-Item -Path "env:$($Matches[1])" -Value $Matches[2] -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+Setup-VCEnv
+Ok "MSVC x64 environment configured"
+
+# Ensure cargo is in PATH
+if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+    $env:PATH = "C:\Users\$env:USERNAME\.cargo\bin;" + $env:PATH
+}
+if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) { Err "cargo not found. Install Rust via rustup." }
+
+# Ensure cmake/ninja are in PATH
+foreach ($p in @("C:\Program Files\CMake\bin")) {
+    if (Test-Path $p) { $env:PATH = "$p;" + $env:PATH }
+}
+
+# ─── 1. Rust C ABI ────────────────────────────────────────────────────────────
+
 if (-not $TestOnly) {
     Step "Building Rust C ABI (automerge_core)"
     Push-Location "$root/rust-core"
-    $cargoArgs = @("+$gnullvm", "build")
+    $cargoArgs = @("build")
     if ($Profile -eq "release") { $cargoArgs += "--release" }
     Run "cargo" $cargoArgs
     Pop-Location
@@ -55,24 +111,27 @@ $coreDll = "$rustOutDir/automerge_core.dll"
 if (-not (Test-Path $coreDll)) { Err "automerge_core.dll not found at $coreDll" }
 Ok "Found: $coreDll"
 
-# 2. Rust tests
+# ─── 2. Rust tests ────────────────────────────────────────────────────────────
+
 Step "Running Rust tests"
 Push-Location "$root/rust-core"
-Run "cargo" @("+$gnullvm", "test")
+Run "cargo" @("test")
 Pop-Location
 Ok "Rust tests passed"
 
-# 3. C++ wrapper + tests
+# ─── 3. C++ wrapper + tests ───────────────────────────────────────────────────
+
 if (-not $SkipCpp) {
     if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
         Write-Host "  cmake not found - skipping C++ build." -ForegroundColor Yellow
     } else {
-        Step "Building C++ wrapper and tests"
+        Step "Building C++ wrapper and tests (MSVC x64)"
         $buildDir = "$root/build"
         if (-not (Test-Path $buildDir)) { New-Item -ItemType Directory $buildDir | Out-Null }
         $cmakeType = if ($Profile -eq "release") { "Release" } else { "Debug" }
         Push-Location $buildDir
-        Run "cmake" @("..", "-G", "Ninja", "-DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-arm64-mingw.cmake", "-DCMAKE_BUILD_TYPE=$cmakeType", "-DAUTOMERGE_BUILD_TESTS=ON")
+        # Use Ninja + MSVC; no custom toolchain file needed (MSVC auto-detected via vcvarsall)
+        Run "cmake" @("..", "-G", "Ninja", "-DCMAKE_BUILD_TYPE=$cmakeType", "-DAUTOMERGE_BUILD_TESTS=ON")
         Run "cmake" @("--build", ".")
         Step "Running C++ tests"
         Run "ctest" @("--output-on-failure")
@@ -81,14 +140,29 @@ if (-not $SkipCpp) {
     }
 }
 
-# 4. C# wrapper + tests
+# ─── 4. WinRT component ───────────────────────────────────────────────────────
+
+if (-not $SkipWinRT) {
+    Step "Building WinRT component (Automerge.Windows.dll + .winmd)"
+    $winrtBuildScript = "$root/winrt-component/build-winrt.ps1"
+    if (Test-Path $winrtBuildScript) {
+        & $winrtBuildScript -Profile $Profile -VSPath $vsPath
+        if ($LASTEXITCODE -ne 0) { Err "WinRT build failed" }
+        Ok "WinRT component built"
+    } else {
+        Write-Host "  WinRT build script not found — skipping." -ForegroundColor Yellow
+    }
+}
+
+# ─── 5. C# wrapper + tests ────────────────────────────────────────────────────
+
 if (-not $SkipCsharp) {
     if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
         Write-Host "  dotnet not found - skipping C# build." -ForegroundColor Yellow
     } else {
-        Step "Running C# tests"
+        Step "Running C# tests (x64)"
         Push-Location "$root/tests/csharp"
-        Run "dotnet" @("test", "-r", "win-arm64", "--logger", "console;verbosity=normal")
+        Run "dotnet" @("test", "-r", "win-x64", "--logger", "console;verbosity=normal")
         Pop-Location
         Ok "C# tests passed"
     }

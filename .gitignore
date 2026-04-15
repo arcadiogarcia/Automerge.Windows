@@ -35,4 +35,12 @@ desktop.ini
 # ─── Test results ─────────────────────────────────────────────────────────────
 TestResults/
 *.trx
+
+# ─── WinRT build output ───────────────────────────────────────────────────────
+build-winrt/
+
+# ─── Local dist / NuGet test output ──────────────────────────────────────────
+dist/
+dist-preview/
+*.nupkg
 *.coverage

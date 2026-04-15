@@ -145,4 +145,22 @@ public class DocumentTests
         doc.PutJsonRoot("""{"counter":3}""");
         Assert.Equal("3", doc.GetValue("""["counter"]"""));
     }
+
+    // ─── API boundary ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void PutJsonRoot_NestedObject_ThrowsException()
+    {
+        using var doc = new Document();
+        Assert.Throws<AutomergeNativeException>(() =>
+            doc.PutJsonRoot("""{"nested":{"inner":1}}"""));
+    }
+
+    [Fact]
+    public void PutJsonRoot_ArrayValue_ThrowsException()
+    {
+        using var doc = new Document();
+        Assert.Throws<AutomergeNativeException>(() =>
+            doc.PutJsonRoot("""{"items":[1,2,3]}"""));
+    }
 }

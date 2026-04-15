@@ -29,16 +29,16 @@ else()
     set(CARGO_FLAGS "")
 endif()
 
-# gnullvm toolchain output directory (default target for pinned toolchain)
+# MSVC x64 toolchain output directory (default target for pinned toolchain)
 set(RUST_OUT_DIR "${RUST_CORE_DIR}/target/${AUTOMERGE_RUST_PROFILE}")
 set(AUTOMERGE_CORE_DLL "${RUST_OUT_DIR}/automerge_core.dll")
-# MinGW-style import library (produced by gnullvm toolchain)
-set(AUTOMERGE_CORE_IMPLIB "${RUST_OUT_DIR}/libautomerge_core.dll.a")
+# MSVC-style import library (produced by x86_64-pc-windows-msvc toolchain)
+set(AUTOMERGE_CORE_IMPLIB "${RUST_OUT_DIR}/automerge_core.dll.lib")
 
 # Custom command to build the Rust crate
 add_custom_command(
     OUTPUT  "${AUTOMERGE_CORE_DLL}" "${AUTOMERGE_CORE_IMPLIB}"
-    COMMAND "${CARGO_EXE}" +stable-aarch64-pc-windows-gnullvm build ${CARGO_FLAGS}
+    COMMAND "${CARGO_EXE}" build ${CARGO_FLAGS}
     WORKING_DIRECTORY "${RUST_CORE_DIR}"
     COMMENT "Building Rust automerge_core..."
     VERBATIM

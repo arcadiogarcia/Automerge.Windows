@@ -12,9 +12,46 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <!-- NuGet package metadata -->
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Automerge.Windows</PackageId>
+    <PackageVersion>0.1.0</PackageVersion>
+    <Authors>Arcadio Garcia</Authors>
+    <Description>Native Windows bindings for the Automerge CRDT library. Provides a C# P/Invoke wrapper over automerge_core.dll (Rust). Zero WebView, zero JavaScript runtime.</Description>
+    <PackageTags>automerge;crdt;sync;collaborative;windows</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/arcadiogarcia/Automerge.Windows</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/arcadiogarcia/Automerge.Windows</PackageProjectUrl>
+    <!-- Allow overriding version from CI: dotnet pack -p:PackageVersion=1.2.3 -->
+  </PropertyGroup>
+
   <PropertyGroup>
     <UseWindowsDesktopSdk>false</UseWindowsDesktopSdk>
   </PropertyGroup>
+
+  <!--
+    Include automerge_core.dll in the NuGet package under runtimes/win-x64/native/.
+    Set NativeDllPath when packing, e.g.:
+      dotnet pack -p:NativeDllPath=<abs-path-to-rust-target-release>
+  -->
+  <ItemGroup Condition="'$(NativeDllPath)' != ''">
+    <None Include="$(NativeDllPath)\automerge_core.dll"
+          Condition="Exists('$(NativeDllPath)\automerge_core.dll')">
+      <Pack>true</Pack>
+      <PackagePath>runtimes/win-x64/native/</PackagePath>
+    </None>
+  </ItemGroup>
+
+  <!-- Include README in the package root -->
+  <ItemGroup>
+    <None Include="..\README.md" Condition="Exists('..\README.md')">
+      <Pack>true</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
 
   <!-- WinRT projection, generated from the WinRT component .winmd -->
   <!-- Uncomment when the WinRT component is built:
