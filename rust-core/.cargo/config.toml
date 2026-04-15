@@ -1,0 +1,11 @@
+# Cargo workspace configuration for automerge-core
+# This file configures the build toolchain for ARM64 Windows.
+
+# ─── ARM64 MSVC (uses lld-link wrapper with generated ARM64 import libs) ─────
+[target.aarch64-pc-windows-msvc]
+linker = "C:\\Users\\arcad\\AppData\\Local\\arm64-msvc-stubs\\lld-link-arm64.cmd"
+
+# ─── ARM64 GNULLVM (llvm-mingw with UCRT) ────────────────────────────────────
+[target.aarch64-pc-windows-gnullvm]
+linker = "C:\\llvm-mingw\\llvm-mingw-20260407-ucrt-aarch64\\bin\\aarch64-w64-mingw32-clang.exe"
+ar     = "C:\\llvm-mingw\\llvm-mingw-20260407-ucrt-aarch64\\bin\\llvm-ar.exe"

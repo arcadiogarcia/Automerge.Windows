@@ -1,0 +1,90 @@
+// Automerge.Windows.idl
+// WinRT projection for the Automerge CRDT library.
+// Targets: Windows App SDK (WinUI 3) and Windows 10+
+
+import "Windows.Foundation.idl";
+import "Windows.Storage.Streams.idl";
+
+namespace Automerge.Windows
+{
+    // ─── Document ─────────────────────────────────────────────────────────────
+
+    /// WinRT projection of an Automerge document.
+    ///
+    /// Binary data (changes, heads, snapshots, sync messages) is exchanged as
+    /// IBuffer to interoperate naturally with Windows APIs.  Use
+    /// AutomergeHelpers in the C# layer to convert to/from byte arrays.
+    ///
+    /// All operations that mutate the document should be serialised by the
+    /// caller.  There are no internal locks.
+    runtimeclass Document
+    {
+        /// Create a new empty document.
+        Document();
+
+        // ─── Persistence ─────────────────────────────────────────────────
+
+        /// Serialize the document to a binary buffer.
+        Windows.Storage.Streams.IBuffer Save();
+
+        /// Load a document from a binary buffer.
+        static Document Load(Windows.Storage.Streams.IBuffer data);
+
+        // ─── Heads ───────────────────────────────────────────────────────
+
+        /// Get the current heads as packed 32-byte SHA-256 hashes.
+        Windows.Storage.Streams.IBuffer GetHeads();
+
+        // ─── Changes ─────────────────────────────────────────────────────
+
+        /// Get changes since the given heads.
+        /// Pass an empty IBuffer to get all changes from genesis.
+        Windows.Storage.Streams.IBuffer GetChanges(Windows.Storage.Streams.IBuffer heads);
+
+        /// Apply a binary changes buffer to the document.
+        void ApplyChanges(Windows.Storage.Streams.IBuffer changes);
+
+        // ─── Merge ───────────────────────────────────────────────────────
+
+        /// Merge all changes from other into this document.
+        void Merge(Document other);
+
+        // ─── Read ────────────────────────────────────────────────────────
+
+        /// Read a value by JSON-array path.
+        /// Pass an empty string or "[]" to serialise the entire root object.
+        String GetValue(String pathJson);
+
+        // ─── Write ───────────────────────────────────────────────────────
+
+        /// Set scalar key-value pairs from a JSON object string.
+        void PutJsonRoot(String jsonObj);
+    }
+
+    // ─── SyncState ────────────────────────────────────────────────────────────
+
+    /// Maintains the state of a sync session with one remote peer.
+    runtimeclass SyncState
+    {
+        /// Create a fresh sync state (for the start of a new peer relationship).
+        SyncState();
+
+        // ─── Protocol ────────────────────────────────────────────────────
+
+        /// Generate the next message to send to the remote peer.
+        /// Returns an empty buffer if sync is complete.
+        Windows.Storage.Streams.IBuffer GenerateSyncMessage(Document doc);
+
+        /// Process a message received from the remote peer.
+        void ReceiveSyncMessage(Document doc,
+                                Windows.Storage.Streams.IBuffer message);
+
+        // ─── Persistence ─────────────────────────────────────────────────
+
+        /// Serialize the sync state for optional persistence across sessions.
+        Windows.Storage.Streams.IBuffer Save();
+
+        /// Load a sync state from persisted bytes.
+        static SyncState Load(Windows.Storage.Streams.IBuffer data);
+    }
+}

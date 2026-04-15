@@ -1,0 +1,14 @@
+language = "C"
+include_guard = "AUTOMERGE_CORE_H"
+documentation_style = "c99"
+tab_width = 4
+
+[export]
+prefix = "AM"
+include = ["AMdoc", "AMsync_state", "AMerror"]
+
+[parse]
+parse_deps = false
+
+[fn]
+rename_args = "snake_case"
