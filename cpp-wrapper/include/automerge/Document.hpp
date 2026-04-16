@@ -273,6 +273,16 @@ public:
     /// Check whether the document contains all the given heads.
     [[nodiscard]] bool has_heads(std::span<const uint8_t> heads) const;
 
+    // ─── Change metadata ───────────────────────────────────────────────────
+
+    /// Get metadata for changes since heads. Returns JSON array.
+    [[nodiscard]] std::string
+    get_changes_meta(std::span<const uint8_t> heads = {}) const;
+
+    /// Inspect a change by its 32-byte hash. Returns JSON metadata or "null".
+    [[nodiscard]] std::string
+    inspect_change(std::span<const uint8_t> hash) const;
+
     // ─── Internal access ───────────────────────────────────────────────────
 
     /// Return the underlying raw handle.

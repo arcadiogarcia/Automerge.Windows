@@ -456,5 +456,19 @@ bool Document::has_heads(std::span<const uint8_t> heads) const {
     return result != 0;
 }
 
+// ─── Change metadata ────────────────────────────────────────────────────────
+
+std::string Document::get_changes_meta(std::span<const uint8_t> heads) const {
+    uint8_t* ptr{}; size_t len{};
+    check(AMget_changes_meta(handle_, heads.data(), heads.size(), &ptr, &len));
+    return take_json(ptr, len);
+}
+
+std::string Document::inspect_change(std::span<const uint8_t> hash) const {
+    uint8_t* ptr{}; size_t len{};
+    check(AMinspect_change(handle_, hash.data(), hash.size(), &ptr, &len));
+    return take_json(ptr, len);
+}
+
 } // namespace automerge
 

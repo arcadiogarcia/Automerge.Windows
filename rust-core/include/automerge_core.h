@@ -459,6 +459,22 @@ int AMsave_sync_state(const AMsync_state* state,
 int AMload_sync_state(const uint8_t* data, size_t len,
                       AMsync_state** out_state);
 
+/// Check if the remote peer (represented by sync state) has all our local changes.
+/// Writes 1 to out_result if they do, 0 otherwise.
+int AMhas_our_changes(AMdoc* doc, AMsync_state* state, int32_t* out_result);
+
+// ─── Change metadata ─────────────────────────────────────────────────────────
+
+/// Get metadata for changes since `heads`. Returns JSON array of change info objects.
+/// Each element: {"hash","actor","seq","timestamp","message","deps","startOp","numOps"}
+int AMget_changes_meta(AMdoc* doc, const uint8_t* heads, size_t heads_len,
+                       uint8_t** out_json, size_t* out_len);
+
+/// Inspect a single change by its 32-byte hash. Returns JSON metadata object,
+/// or JSON null if the change is not found.
+int AMinspect_change(AMdoc* doc, const uint8_t* hash, size_t hash_len,
+                     uint8_t** out_json, size_t* out_len);
+
 // ─── Error handling ──────────────────────────────────────────────────────────
 
 /// Copy the last error message into buf (NUL-terminated).

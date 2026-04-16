@@ -160,3 +160,22 @@ pub unsafe extern "C" fn AMload_sync_state(
         }
     }
 }
+
+/// Check if the remote peer (represented by `state`) has all of our local changes.
+/// Writes 1 to `*out_result` if they do, 0 otherwise.
+/// # Safety
+/// All pointer arguments must be valid and non-null.
+#[no_mangle]
+pub unsafe extern "C" fn AMhas_our_changes(
+    doc: *mut AMdoc,
+    state: *mut AMsync_state,
+    out_result: *mut i32,
+) -> i32 {
+    if doc.is_null() || state.is_null() || out_result.is_null() {
+        set_last_error("null pointer argument");
+        return AM_ERR;
+    }
+    let result = (*doc).0.has_our_changes(&(*state).0);
+    *out_result = if result { 1 } else { 0 };
+    AM_OK
+}

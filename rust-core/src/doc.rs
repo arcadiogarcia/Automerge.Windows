@@ -1592,6 +1592,87 @@ pub unsafe extern "C" fn AMhas_heads(
     AM_OK
 }
 
+/// Get metadata for all changes since `heads` (or all changes if heads is NULL/empty).
+/// Returns a JSON array: `[{"hash":"hex","actor":"hex","seq":n,"timestamp":n,"message":"...","deps":["hex",...]}, ...]`
+/// Caller frees with `AMfree_bytes(ptr, len + 1)`.
+#[no_mangle]
+pub unsafe extern "C" fn AMget_changes_meta(
+    doc: *mut AMdoc,
+    heads: *const u8,
+    heads_len: usize,
+    out_json: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_json);
+    check_ptr!(out_len);
+    let parsed_heads = parse_heads(heads, heads_len);
+    let changes = (*doc).0.get_changes(&parsed_heads);
+    let metas: Vec<JsonValue> = changes.iter().map(|c| {
+        let hash_hex = c.hash().0.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+        let actor_hex = c.actor_id().to_hex_string();
+        let deps: Vec<JsonValue> = c.deps().iter().map(|d| {
+            json!(d.0.iter().map(|b| format!("{:02x}", b)).collect::<String>())
+        }).collect();
+        json!({
+            "hash": hash_hex,
+            "actor": actor_hex,
+            "seq": c.seq(),
+            "timestamp": c.timestamp(),
+            "message": c.message().map(|s| s.as_str()).unwrap_or("").to_string(),
+            "deps": deps,
+            "startOp": c.start_op(),
+            "numOps": c.len(),
+        })
+    }).collect();
+    write_json_out(JsonValue::Array(metas), out_json, out_len)
+}
+
+/// Inspect a single change by its 32-byte hash. Returns JSON metadata object
+/// (same format as one element of AMget_changes_meta), or "null" if not found.
+/// Caller frees with `AMfree_bytes(ptr, len + 1)`.
+#[no_mangle]
+pub unsafe extern "C" fn AMinspect_change(
+    doc: *mut AMdoc,
+    hash: *const u8,
+    hash_len: usize,
+    out_json: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_json);
+    check_ptr!(out_len);
+    if hash.is_null() || hash_len != 32 {
+        set_last_error("hash must be exactly 32 bytes");
+        return AM_ERR;
+    }
+    let arr: [u8; 32] = std::slice::from_raw_parts(hash, 32).try_into().unwrap();
+    let ch = ChangeHash(arr);
+    match (*doc).0.get_change_by_hash(&ch) {
+        Some(c) => {
+            let hash_hex = c.hash().0.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+            let actor_hex = c.actor_id().to_hex_string();
+            let deps: Vec<JsonValue> = c.deps().iter().map(|d| {
+                json!(d.0.iter().map(|b| format!("{:02x}", b)).collect::<String>())
+            }).collect();
+            let meta = json!({
+                "hash": hash_hex,
+                "actor": actor_hex,
+                "seq": c.seq(),
+                "timestamp": c.timestamp(),
+                "message": c.message().map(|s| s.as_str()).unwrap_or("").to_string(),
+                "deps": deps,
+                "startOp": c.start_op(),
+                "numOps": c.len(),
+            });
+            write_json_out(meta, out_json, out_len)
+        }
+        None => {
+            write_json_out(JsonValue::Null, out_json, out_len)
+        }
+    }
+}
+
 
 /// Move a `Vec<u8>` to the heap; return raw pointer.
 /// Capacity is shrunk to `len` so `AMfree_bytes(ptr, len)` is safe.

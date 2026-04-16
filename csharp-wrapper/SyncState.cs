@@ -110,6 +110,21 @@ namespace Automerge.Windows
             return new SyncState(state);
         }
 
+        /// <summary>
+        /// Check if the remote peer (represented by this sync state) has all of our local changes.
+        /// </summary>
+        public bool HasOurChanges(Document doc)
+        {
+            ArgumentNullException.ThrowIfNull(doc);
+            ThrowIfDisposed();
+            doc.ThrowIfDisposedInternal();
+
+            int result = 0;
+            NativeMethods.CheckResult(
+                NativeMethods.AMhas_our_changes(doc.Handle, _handle, ref result));
+            return result != 0;
+        }
+
         private void ThrowIfDisposed()
         {
             ObjectDisposedException.ThrowIf(_disposed, this);

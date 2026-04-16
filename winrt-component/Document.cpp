@@ -402,5 +402,15 @@ bool Document::HasHeads(winrt::Windows::Storage::Streams::IBuffer const& heads) 
     catch (const std::exception& ex) { throw_winrt_error(ex); }
 }
 
+hstring Document::GetChangesMeta(winrt::Windows::Storage::Streams::IBuffer const& heads) {
+    try { return string_to_hstring(doc_.get_changes_meta(ibuffer_to_bytes(heads))); }
+    catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+hstring Document::InspectChange(winrt::Windows::Storage::Streams::IBuffer const& hash) {
+    try { return string_to_hstring(doc_.inspect_change(ibuffer_to_bytes(hash))); }
+    catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
 } // namespace winrt::Automerge::Windows::implementation
 

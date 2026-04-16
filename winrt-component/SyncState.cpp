@@ -60,4 +60,13 @@ winrt::Automerge::Windows::SyncState SyncState::Load(
     }
 }
 
+bool SyncState::HasOurChanges(winrt::Automerge::Windows::Document const& doc) {
+    try {
+        auto& doc_impl = *winrt::get_self<implementation::Document>(doc);
+        return state_.has_our_changes(doc_impl.native_doc());
+    } catch (const std::exception& ex) {
+        throw_winrt_error(ex);
+    }
+}
+
 } // namespace winrt::Automerge::Windows::implementation

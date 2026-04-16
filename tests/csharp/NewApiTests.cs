@@ -602,5 +602,106 @@ namespace AutomergeTests
             using var doc = new Document();
             Assert.True(doc.HasHeads(ReadOnlySpan<byte>.Empty));
         }
+
+        // ─── GetChangesMeta ──────────────────────────────────────────────────
+
+        [Fact]
+        public void GetChangesMeta_ReturnsJsonArray()
+        {
+            using var doc = new Document();
+            doc.Put(null, "k", "\"v\"");
+            var meta = doc.GetChangesMeta();
+            Assert.StartsWith("[", meta);
+            Assert.Contains("actor", meta);
+            Assert.Contains("hash", meta);
+            Assert.Contains("seq", meta);
+        }
+
+        [Fact]
+        public void GetChangesMeta_EmptyDoc_ReturnsEmptyArray()
+        {
+            using var doc = new Document();
+            var meta = doc.GetChangesMeta();
+            Assert.Equal("[]", meta);
+        }
+
+        [Fact]
+        public void GetChangesMeta_SinceHeads_ReturnsOnlyNew()
+        {
+            using var doc = new Document();
+            doc.Put(null, "a", "1");
+            var heads = doc.GetHeads();
+            doc.Put(null, "b", "2");
+            var allMeta = doc.GetChangesMeta();
+            var sinceMeta = doc.GetChangesMeta(heads);
+            // Since should return fewer (or same) changes than all
+            Assert.True(sinceMeta.Length <= allMeta.Length);
+            Assert.StartsWith("[", sinceMeta);
+        }
+
+        // ─── InspectChange ───────────────────────────────────────────────────
+
+        [Fact]
+        public void InspectChange_ExistingHash_ReturnsMetadata()
+        {
+            using var doc = new Document();
+            doc.Put(null, "k", "\"v\"");
+            var heads = doc.GetHeads();
+            Assert.True(heads.Length >= 32);
+            var hash = heads.AsSpan(0, 32);
+            var meta = doc.InspectChange(hash);
+            Assert.Contains("actor", meta);
+            Assert.Contains("hash", meta);
+        }
+
+        [Fact]
+        public void InspectChange_UnknownHash_ReturnsNull()
+        {
+            using var doc = new Document();
+            doc.Put(null, "k", "1");
+            var fakeHash = new byte[32];
+            var meta = doc.InspectChange(fakeHash);
+            Assert.Equal("null", meta);
+        }
+
+        // ─── HasOurChanges (on SyncState) ────────────────────────────────────
+
+        [Fact]
+        public void HasOurChanges_AfterFullSync_ReturnsTrue()
+        {
+            using var doc1 = new Document();
+            doc1.Put(null, "k", "\"v\"");
+
+            using var doc2 = new Document();
+
+            // Sync doc1 → doc2
+            using var sync1 = new SyncState();
+            using var sync2 = new SyncState();
+
+            for (int i = 0; i < 10; i++)
+            {
+                var msg1 = sync1.GenerateSyncMessage(doc1);
+                if (msg1.Length > 0) sync2.ReceiveSyncMessage(doc2, msg1);
+
+                var msg2 = sync2.GenerateSyncMessage(doc2);
+                if (msg2.Length > 0) sync1.ReceiveSyncMessage(doc1, msg2);
+
+                if (msg1.Length == 0 && msg2.Length == 0) break;
+            }
+
+            // After full sync, the remote should have our changes
+            Assert.True(sync1.HasOurChanges(doc1));
+        }
+
+        [Fact]
+        public void HasOurChanges_BeforeSync_ReturnsFalse()
+        {
+            using var doc = new Document();
+            doc.Put(null, "k", "1");
+
+            using var sync = new SyncState();
+            // Haven't synced yet — remote doesn't have our changes
+            Assert.False(sync.HasOurChanges(doc));
+        }
     }
 }

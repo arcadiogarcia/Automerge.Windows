@@ -280,6 +280,24 @@ namespace Automerge.Windows
         [LibraryImport(Lib)] internal static partial int AMload_sync_state(
             byte* data, nuint len, ref IntPtr out_state);
 
+        // ─── Sync: has_our_changes ──────────────────────────────────────────
+
+        [LibraryImport(Lib)]
+        internal static partial int AMhas_our_changes(
+            IntPtr doc, IntPtr state, ref int out_result);
+
+        // ─── Change metadata ────────────────────────────────────────────────
+
+        [LibraryImport(Lib)]
+        internal static partial int AMget_changes_meta(
+            IntPtr doc, byte* heads, nuint heads_len,
+            ref IntPtr out_json, ref nuint out_len);
+
+        [LibraryImport(Lib)]
+        internal static partial int AMinspect_change(
+            IntPtr doc, byte* hash, nuint hash_len,
+            ref IntPtr out_json, ref nuint out_len);
+
         // ─── Error handling ─────────────────────────────────────────────────
         [LibraryImport(Lib)] internal static partial nuint AMget_last_error(
             byte* buf, nuint buf_len);

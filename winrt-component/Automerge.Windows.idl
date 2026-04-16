@@ -202,6 +202,12 @@ namespace Automerge.Windows
 
         /// Check whether the document contains all the given heads.
         Boolean HasHeads(Windows.Storage.Streams.IBuffer heads);
+
+        /// Get metadata for changes since heads. Returns JSON array.
+        String GetChangesMeta(Windows.Storage.Streams.IBuffer heads);
+
+        /// Inspect a change by its 32-byte hash. Returns JSON metadata or "null".
+        String InspectChange(Windows.Storage.Streams.IBuffer hash);
     }
 
     // ─── SyncState ────────────────────────────────────────────────────────────
@@ -216,6 +222,9 @@ namespace Automerge.Windows
 
         Windows.Storage.Streams.IBuffer Save();
         static SyncState Load(Windows.Storage.Streams.IBuffer data);
+
+        /// Check if remote peer has all our local changes.
+        Boolean HasOurChanges(Document doc);
     }
 
     // ─── RepoSyncSession ──────────────────────────────────────────────────────

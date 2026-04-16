@@ -110,6 +110,10 @@ struct Document : DocumentT<Document>
         winrt::Windows::Storage::Streams::IBuffer const& hash);
     bool HasHeads(winrt::Windows::Storage::Streams::IBuffer const& heads);
 
+    // Change metadata APIs
+    hstring GetChangesMeta(winrt::Windows::Storage::Streams::IBuffer const& heads);
+    hstring InspectChange(winrt::Windows::Storage::Streams::IBuffer const& hash);
+
     // Internal
     ::automerge::Document& native_doc() noexcept { return doc_; }
 

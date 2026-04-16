@@ -57,6 +57,9 @@ public:
     /// Restore a sync state from persisted bytes.
     [[nodiscard]] static SyncState load(std::span<const uint8_t> data);
 
+    /// Check if the remote peer has all of our local changes.
+    [[nodiscard]] bool has_our_changes(Document& doc) const;
+
 private:
     explicit SyncState(AMsync_state* handle) noexcept;
     static void check(int rc);

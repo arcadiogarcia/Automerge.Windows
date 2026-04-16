@@ -88,4 +88,10 @@ SyncState SyncState::load(std::span<const uint8_t> data) {
     return SyncState(out);
 }
 
+bool SyncState::has_our_changes(Document& doc) const {
+    int32_t result{};
+    check(AMhas_our_changes(doc.native_handle(), handle_, &result));
+    return result != 0;
+}
+
 } // namespace automerge

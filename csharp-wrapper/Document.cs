@@ -735,6 +735,50 @@ namespace Automerge.Windows
             return result != 0;
         }
 
+        // ─── Change metadata ──────────────────────────────────────────────────
+
+        /// <summary>
+        /// Get metadata for changes since <paramref name="heads"/> (or all if empty).
+        /// Returns a JSON array of objects with hash, actor, seq, timestamp, message, deps, etc.
+        /// </summary>
+        public unsafe string GetChangesMeta(ReadOnlySpan<byte> heads = default)
+        {
+            ThrowIfDisposed();
+            IntPtr ptr = IntPtr.Zero;
+            nuint len = 0;
+            fixed (byte* h = heads)
+            {
+                NativeMethods.CheckResult(
+                    NativeMethods.AMget_changes_meta(_handle, h, (nuint)heads.Length, ref ptr, ref len));
+            }
+            if (ptr == IntPtr.Zero) return "[]";
+            var bytes = new byte[(int)len];
+            Marshal.Copy(ptr, bytes, 0, (int)len);
+            NativeMethods.AMfree_bytes(ptr, len + 1);
+            return Encoding.UTF8.GetString(bytes);
+        }
+
+        /// <summary>
+        /// Inspect a single change by its 32-byte hash.
+        /// Returns JSON metadata object, or "null" if not found.
+        /// </summary>
+        public unsafe string InspectChange(ReadOnlySpan<byte> hash)
+        {
+            ThrowIfDisposed();
+            IntPtr ptr = IntPtr.Zero;
+            nuint len = 0;
+            fixed (byte* h = hash)
+            {
+                NativeMethods.CheckResult(
+                    NativeMethods.AMinspect_change(_handle, h, (nuint)hash.Length, ref ptr, ref len));
+            }
+            if (ptr == IntPtr.Zero) return "null";
+            var bytes = new byte[(int)len];
+            Marshal.Copy(ptr, bytes, 0, (int)len);
+            NativeMethods.AMfree_bytes(ptr, len + 1);
+            return Encoding.UTF8.GetString(bytes);
+        }
+
         // ─── Internal ─────────────────────────────────────────────────────────
 
         internal IntPtr Handle => _handle;

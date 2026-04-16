@@ -24,6 +24,9 @@ struct SyncState : SyncStateT<SyncState>
     static winrt::Automerge::Windows::SyncState Load(
         winrt::Windows::Storage::Streams::IBuffer const& data);
 
+    // HasOurChanges
+    bool HasOurChanges(winrt::Automerge::Windows::Document const& doc);
+
     // Internal
     ::automerge::SyncState& native_state() noexcept { return state_; }
 
