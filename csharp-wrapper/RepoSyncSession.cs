@@ -63,6 +63,27 @@ namespace Automerge.Windows
         private bool _firstPush = true;
 
         /// <summary>
+        /// Optional callback invoked each time <see cref="RunAsync"/> or
+        /// <see cref="SyncOnceAsync"/> applies an incoming remote sync frame to
+        /// the document.
+        ///
+        /// <para>
+        /// Use this to drive reactive UI updates, call <see cref="Document.DiffIncremental"/>,
+        /// or persist the document to disk — without polling.
+        /// The delegate is invoked on the sync-loop thread; keep it fast or post to
+        /// a dispatcher.
+        /// </para>
+        /// </summary>
+        /// <example><![CDATA[
+        /// session.OnRemoteChange = () =>
+        /// {
+        ///     var patches = doc.DiffIncremental();
+        ///     dispatcher.Post(() => UpdateUI(patches));
+        /// };
+        /// ]]></example>
+        public Action? OnRemoteChange { get; set; }
+
+        /// <summary>
         /// Create a session. Does not connect until <see cref="RunAsync"/> or
         /// <see cref="SyncOnceAsync"/> is called.
         /// </summary>
@@ -144,6 +165,7 @@ namespace Automerge.Windows
                     if (type == "sync" && fields.TryGetValue("data", out var raw))
                     {
                         syncState.ReceiveSyncMessage(doc, (byte[])raw);
+                        OnRemoteChange?.Invoke();
                         await PushAsync(doc, syncState, cancellationToken);
                     }
                     else if (type == "error")
@@ -179,6 +201,10 @@ namespace Automerge.Windows
         /// <param name="stabilityTimeout">
         ///   Idle period that signals convergence.  Defaults to 2 seconds.
         /// </param>
+        /// <param name="onRemoteChange">
+        ///   Optional callback invoked each time an incoming sync frame is applied
+        ///   to the document.  Same semantics as <see cref="OnRemoteChange"/>.
+        /// </param>
         /// <param name="cancellationToken">Optional external cancellation.</param>
         public static async Task SyncOnceAsync(
             string serverUrl,
@@ -186,11 +212,13 @@ namespace Automerge.Windows
             Document doc,
             SyncState syncState,
             TimeSpan? stabilityTimeout = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            Action? onRemoteChange = null)
         {
             var timeout = stabilityTimeout ?? TimeSpan.FromSeconds(2);
 
             await using var session = new RepoSyncSession(serverUrl, documentId);
+            session.OnRemoteChange = onRemoteChange;
             await session.ConnectAndHandshakeAsync(cancellationToken);
             await session.PushAsync(doc, syncState, cancellationToken);
 
@@ -215,6 +243,7 @@ namespace Automerge.Windows
                 if (type == "sync" && fields.TryGetValue("data", out var raw))
                 {
                     syncState.ReceiveSyncMessage(doc, (byte[])raw);
+                    session.OnRemoteChange?.Invoke();
                     await session.PushAsync(doc, syncState, cancellationToken);
                 }
             }

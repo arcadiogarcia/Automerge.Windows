@@ -35,6 +35,15 @@ struct RepoSyncSession : RepoSyncSessionT<RepoSyncSession>
     /// Gracefully close the WebSocket connection.
     winrt::Windows::Foundation::IAsyncAction CloseAsync();
 
+    // ─── Event ───────────────────────────────────────────────────────────
+
+    /// Raised each time RunAsync/SyncOnceAsync applies an incoming remote change.
+    winrt::event_token RemoteChange(
+        winrt::Windows::Foundation::TypedEventHandler<
+            winrt::Automerge::Windows::RepoSyncSession,
+            winrt::Windows::Foundation::IInspectable> const& handler);
+    void RemoteChange(winrt::event_token const& token) noexcept;
+
 private:
     // ─── State ───────────────────────────────────────────────────────────────
 
@@ -66,6 +75,11 @@ private:
         implementation::SyncState&  sync_impl);
 
     void EnqueueFrame(std::vector<uint8_t> frame);
+
+    // Event source for RemoteChange.
+    winrt::event<winrt::Windows::Foundation::TypedEventHandler<
+        winrt::Automerge::Windows::RepoSyncSession,
+        winrt::Windows::Foundation::IInspectable>> remote_change_event_;
 };
 
 } // namespace winrt::Automerge::Windows::implementation

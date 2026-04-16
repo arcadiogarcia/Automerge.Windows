@@ -168,6 +168,21 @@ IAsyncAction RepoSyncSession::PushAsync(
     writer.DetachStream();
 }
 
+// ─── RemoteChange event ───────────────────────────────────────────────────────
+
+winrt::event_token RepoSyncSession::RemoteChange(
+    winrt::Windows::Foundation::TypedEventHandler<
+        winrt::Automerge::Windows::RepoSyncSession,
+        winrt::Windows::Foundation::IInspectable> const& handler)
+{
+    return remote_change_event_.add(handler);
+}
+
+void RepoSyncSession::RemoteChange(winrt::event_token const& token) noexcept
+{
+    remote_change_event_.remove(token);
+}
+
 // ─── CloseAsync ───────────────────────────────────────────────────────────────
 
 IAsyncAction RepoSyncSession::CloseAsync()
@@ -235,6 +250,7 @@ IAsyncAction RepoSyncSession::RunAsync(
                     try {
                         sync_impl.native_state().receive_sync_message(
                             doc_impl.native_doc(), data);
+                        remote_change_event_(*this, nullptr);
                     } catch (...) {}
                     got_sync = true;
                 }
@@ -315,6 +331,7 @@ IAsyncAction RepoSyncSession::SyncOnceAsync(
                     try {
                         sync_impl.native_state().receive_sync_message(
                             doc_impl.native_doc(), data);
+                        impl->remote_change_event_(*impl, nullptr);
                     } catch (...) {}
                     got_sync = true;
                 }

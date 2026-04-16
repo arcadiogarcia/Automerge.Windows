@@ -165,5 +165,10 @@ namespace Automerge.Windows
 
         /// Gracefully close the WebSocket connection.
         Windows.Foundation.IAsyncAction CloseAsync();
+
+        /// Raised each time RunAsync or SyncOnceAsync applies an incoming
+        /// remote sync frame to the document.  Subscribe to drive reactive UI
+        /// updates, call DiffIncremental(), or persist to disk — without polling.
+        event Windows.Foundation.TypedEventHandler<RepoSyncSession, Object> RemoteChange;
     }
 }

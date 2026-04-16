@@ -412,5 +412,85 @@ namespace AutomergeTests
             Assert.Contains("access denied", ex.Message);
             try { await serverTask; } catch { }
         }
+
+        [Fact]
+        public async Task SyncOnce_OnRemoteChange_FiresWhenRemoteDataArrives()
+        {
+            // The server has data; the client starts empty.  OnRemoteChange should
+            // fire at least once when the server's sync frames are applied.
+            using var serverDoc  = new Document();
+            serverDoc.Put(null, "from_server", "\"hello\"");
+
+            int callbackCount = 0;
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var (url, serverTask) = StartServer(async (ws, ct) =>
+            {
+                var (_, f)   = await RecvAsync(ws, ct);
+                var clientId = (string)f["senderId"];
+                await WsSendAsync(ws, PeerMsg("server", clientId), ct);
+
+                using var serverSync = new SyncState();
+                await RunSyncProtocolAsync(ws, serverDoc, serverSync, "server", DocId, ct);
+                await SafeCloseAsync(ws);
+            }, cts.Token);
+
+            using var doc  = new Document();
+            using var sync = new SyncState();
+
+            await RepoSyncSession.SyncOnceAsync(url, DocId, doc, sync,
+                stabilityTimeout: TimeSpan.FromMilliseconds(300),
+                onRemoteChange: () => Interlocked.Increment(ref callbackCount),
+                cancellationToken: cts.Token);
+
+            await serverTask;
+            Assert.True(callbackCount >= 1, $"Expected ≥1 OnRemoteChange calls but got {callbackCount}");
+            Assert.Equal("\"hello\"", doc.Get(null, "from_server"));
+        }
+
+        [Fact]
+        public async Task RunAsync_OnRemoteChange_FiresDuringLoop()
+        {
+            // Start a RunAsync loop, have the server push data, verify callback fires.
+            using var serverDoc  = new Document();
+            serverDoc.Put(null, "key", "\"value\"");
+
+            int callbackCount = 0;
+            var callbackFired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var (url, serverTask) = StartServer(async (ws, ct) =>
+            {
+                var (_, f) = await RecvAsync(ws, ct);
+                await WsSendAsync(ws, PeerMsg("srv", (string)f["senderId"]), ct);
+                using var serverSync = new SyncState();
+                await RunSyncProtocolAsync(ws, serverDoc, serverSync, "srv", DocId, ct);
+                // Stay open until client disconnects.
+                try { await RecvAsync(ws, ct); } catch { }
+                await SafeCloseAsync(ws);
+            }, cts.Token);
+
+            using var doc  = new Document();
+            using var sync = new SyncState();
+            await using var session = new RepoSyncSession(url, DocId);
+            session.OnRemoteChange = () =>
+            {
+                Interlocked.Increment(ref callbackCount);
+                callbackFired.TrySetResult();
+            };
+
+            using var runCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            var runTask = session.RunAsync(doc, sync, runCts.Token);
+
+            // Wait for the callback (or timeout).
+            await Task.WhenAny(callbackFired.Task, Task.Delay(5000, cts.Token));
+
+            runCts.Cancel();
+            try { await runTask; } catch (OperationCanceledException) { }
+            cts.Cancel();
+            try { await serverTask; } catch { }
+
+            Assert.True(callbackCount >= 1, $"Expected ≥1 OnRemoteChange calls but got {callbackCount}");
+        }
     }
 }
