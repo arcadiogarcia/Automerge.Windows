@@ -1,6 +1,7 @@
 use automerge::{
+    marks::ExpandMark,
     transaction::{CommitOptions, Transactable},
-    ActorId, AutoCommit, ChangeHash, ObjId, ObjType, Patch, PatchAction, Prop, ReadDoc,
+    ActorId, AutoCommit, ChangeHash, Cursor, ObjId, ObjType, Patch, PatchAction, Prop, ReadDoc,
     ScalarValue, ROOT,
 };
 use serde_json::{json, Value as JsonValue};
@@ -917,6 +918,555 @@ pub unsafe extern "C" fn AMdiff_incremental(
     write_json_out(JsonValue::Array(patch_jsons), out_json, out_len)
 }
 
+// ─── New APIs: close gap with JS @automerge/automerge ─────────────────────── NEW
+
+/// Get ALL changes in the document (equivalent to getChanges with empty heads, or JS getAllChanges).
+/// Output: concatenated raw change bytes. Caller frees with `AMfree_bytes`.
+#[no_mangle]
+pub unsafe extern "C" fn AMget_all_changes(
+    doc: *mut AMdoc,
+    out_changes: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_changes);
+    check_ptr!(out_len);
+    let changes = (*doc).0.get_changes(&[]);
+    let mut output: Vec<u8> = Vec::new();
+    for change in changes {
+        output.extend_from_slice(change.raw_bytes());
+    }
+    *out_len = output.len();
+    *out_changes = alloc_bytes(output);
+    AM_OK
+}
+
+/// Get the binary representation of the last locally-made change.
+/// Returns empty (len=0) if there is no local change. Caller frees with `AMfree_bytes`.
+#[no_mangle]
+pub unsafe extern "C" fn AMget_last_local_change(
+    doc: *mut AMdoc,
+    out_bytes: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_bytes);
+    check_ptr!(out_len);
+    match (*doc).0.get_last_local_change() {
+        Some(change) => {
+            let raw = change.raw_bytes().to_vec();
+            *out_len = raw.len();
+            *out_bytes = alloc_bytes(raw);
+        }
+        None => {
+            *out_len = 0;
+            *out_bytes = std::ptr::NonNull::dangling().as_ptr();
+        }
+    }
+    AM_OK
+}
+
+/// Get changes that are missing to reach `heads`.
+/// Returns packed 32-byte hashes. Caller frees with `AMfree_bytes`.
+#[no_mangle]
+pub unsafe extern "C" fn AMget_missing_deps(
+    doc: *mut AMdoc,
+    heads: *const u8,
+    heads_len: usize,
+    out_heads: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_heads);
+    check_ptr!(out_len);
+    let parsed = parse_heads(heads, heads_len);
+    let missing = (*doc).0.get_missing_deps(&parsed);
+    let mut bytes: Vec<u8> = Vec::with_capacity(missing.len() * 32);
+    for h in &missing {
+        bytes.extend_from_slice(&h.0);
+    }
+    *out_len = bytes.len();
+    *out_heads = alloc_bytes(bytes);
+    AM_OK
+}
+
+/// Create an empty change (no ops) with optional commit options.
+/// Equivalent to JS `emptyChange()`.
+#[no_mangle]
+pub unsafe extern "C" fn AMempty_change(
+    doc: *mut AMdoc,
+    message: *const c_char,
+    timestamp: i64,
+) -> i32 {
+    check_ptr!(doc);
+    let mut opts = CommitOptions::default();
+    if !message.is_null() {
+        match c_str_to_str(message) {
+            Ok(s) if !s.is_empty() => { opts.set_message(s.to_string()); }
+            _ => {}
+        }
+    }
+    if timestamp != 0 {
+        opts.set_time(timestamp);
+    }
+    (*doc).0.empty_change(opts);
+    AM_OK
+}
+
+/// Save only changes since `heads`. Equivalent to JS `saveSince(heads)`.
+/// Caller frees with `AMfree_bytes`.
+#[no_mangle]
+pub unsafe extern "C" fn AMsave_after(
+    doc: *mut AMdoc,
+    heads: *const u8,
+    heads_len: usize,
+    out_bytes: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_bytes);
+    check_ptr!(out_len);
+    let parsed = parse_heads(heads, heads_len);
+    let bytes = (*doc).0.save_after(&parsed);
+    *out_len = bytes.len();
+    *out_bytes = alloc_bytes(bytes);
+    AM_OK
+}
+
+/// Load incremental changes (the result of `save_incremental`, `save_after`, etc.)
+/// into an existing document. Equivalent to JS `loadIncremental(doc, data)`.
+#[no_mangle]
+pub unsafe extern "C" fn AMload_incremental(
+    doc: *mut AMdoc,
+    data: *const u8,
+    len: usize,
+) -> i32 {
+    check_ptr!(doc);
+    if data.is_null() && len > 0 {
+        set_last_error("null data with non-zero length");
+        return AM_ERR;
+    }
+    let bytes: &[u8] = if len == 0 { &[] } else { std::slice::from_raw_parts(data, len) };
+    match (*doc).0.load_incremental(bytes) {
+        Ok(_) => AM_OK,
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+/// Fork the document at specific heads (immutable snapshot). Equivalent to JS `view(heads)`.
+/// On success, writes new doc handle to `*out_doc`. Caller frees with `AMdestroy_doc`.
+#[no_mangle]
+pub unsafe extern "C" fn AMfork_at(
+    doc: *mut AMdoc,
+    heads: *const u8,
+    heads_len: usize,
+    out_doc: *mut *mut AMdoc,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_doc);
+    let parsed = parse_heads(heads, heads_len);
+    match (*doc).0.fork_at(&parsed) {
+        Ok(forked) => {
+            *out_doc = Box::into_raw(Box::new(AMdoc(forked)));
+            AM_OK
+        }
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+/// Get the object type. Returns JSON: `"map"`, `"list"`, `"text"`, or error.
+/// Caller frees with `AMfree_bytes(ptr, len + 1)`.
+#[no_mangle]
+pub unsafe extern "C" fn AMobject_type(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    out_json: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_json);
+    check_ptr!(out_len);
+    let oid = match read_obj_id(obj_id) {
+        Ok(id) => id,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    match (*doc).0.object_type(&oid) {
+        Ok(ot) => write_json_out(json!(obj_type_str(&ot)), out_json, out_len),
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+/// Diff between two sets of heads. Returns JSON patch array.
+/// Caller frees with `AMfree_bytes(ptr, len + 1)`.
+#[no_mangle]
+pub unsafe extern "C" fn AMdiff(
+    doc: *mut AMdoc,
+    before_heads: *const u8,
+    before_heads_len: usize,
+    after_heads: *const u8,
+    after_heads_len: usize,
+    out_json: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_json);
+    check_ptr!(out_len);
+    let before = parse_heads(before_heads, before_heads_len);
+    let after = parse_heads(after_heads, after_heads_len);
+    let patches = (*doc).0.diff(&before, &after);
+    let patch_jsons: Vec<JsonValue> = patches.iter().map(patch_to_json).collect();
+    write_json_out(JsonValue::Array(patch_jsons), out_json, out_len)
+}
+
+/// Update a text object by diffing old vs new text. Equivalent to JS `updateText`.
+#[no_mangle]
+pub unsafe extern "C" fn AMupdate_text(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    new_text: *const c_char,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(new_text);
+    let oid = match read_obj_id(obj_id) {
+        Ok(id) => id,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let text = match c_str_to_str(new_text) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    match (*doc).0.update_text(&oid, text) {
+        Ok(_) => AM_OK,
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+/// Add a mark (rich text annotation) to a text object.
+/// `name` and `value_json` describe the mark (e.g., name="bold", value="true").
+/// `expand` controls how the mark grows: 0=none, 1=before, 2=after, 3=both.
+#[no_mangle]
+pub unsafe extern "C" fn AMmark(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    start: usize,
+    end: usize,
+    name: *const c_char,
+    value_json: *const c_char,
+    expand: u8,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(name);
+    check_ptr!(value_json);
+    let oid = match read_obj_id(obj_id) {
+        Ok(id) => id,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let mark_name = match c_str_to_str(name) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let val_str = match c_str_to_str(value_json) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let jv: JsonValue = match serde_json::from_str(val_str) {
+        Ok(v) => v,
+        Err(e) => { set_last_error(e.to_string()); return AM_ERR; }
+    };
+    let scalar = match json_val_to_scalar(&jv) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let expand_mark = match expand {
+        0 => ExpandMark::None,
+        1 => ExpandMark::Before,
+        2 => ExpandMark::After,
+        3 => ExpandMark::Both,
+        _ => { set_last_error("expand must be 0-3 (none/before/after/both)"); return AM_ERR; }
+    };
+    use automerge::marks::Mark;
+    let mark = Mark::new(mark_name.to_string(), scalar, start, end);
+    match (*doc).0.mark(&oid, mark, expand_mark) {
+        Ok(_) => AM_OK,
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+/// Remove a mark from a range of a text object.
+/// `expand`: 0=none, 1=before, 2=after, 3=both.
+#[no_mangle]
+pub unsafe extern "C" fn AMunmark(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    name: *const c_char,
+    start: usize,
+    end: usize,
+    expand: u8,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(name);
+    let oid = match read_obj_id(obj_id) {
+        Ok(id) => id,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let mark_name = match c_str_to_str(name) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let expand_mark = match expand {
+        0 => ExpandMark::None,
+        1 => ExpandMark::Before,
+        2 => ExpandMark::After,
+        3 => ExpandMark::Both,
+        _ => { set_last_error("expand must be 0-3"); return AM_ERR; }
+    };
+    match (*doc).0.unmark(&oid, mark_name, start, end, expand_mark) {
+        Ok(_) => AM_OK,
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+/// Get all marks on a text object. Returns JSON array of mark objects:
+/// `[{"name":"bold","value":true,"start":0,"end":5}, ...]`
+/// Caller frees with `AMfree_bytes(ptr, len + 1)`.
+#[no_mangle]
+pub unsafe extern "C" fn AMmarks(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    out_json: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_json);
+    check_ptr!(out_len);
+    let oid = match read_obj_id(obj_id) {
+        Ok(id) => id,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    match (*doc).0.marks(&oid) {
+        Ok(marks) => {
+            let arr: Vec<JsonValue> = marks.into_iter().map(|m| json!({
+                "name": m.name(),
+                "value": scalar_to_json_value(m.value()),
+                "start": m.start,
+                "end": m.end,
+            })).collect();
+            write_json_out(JsonValue::Array(arr), out_json, out_len)
+        }
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+/// Get marks at specific heads. Returns JSON array like AMmarks.
+#[no_mangle]
+pub unsafe extern "C" fn AMmarks_at(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    heads: *const u8,
+    heads_len: usize,
+    out_json: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_json);
+    check_ptr!(out_len);
+    let oid = match read_obj_id(obj_id) {
+        Ok(id) => id,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let parsed = parse_heads(heads, heads_len);
+    match (*doc).0.marks_at(&oid, &parsed) {
+        Ok(marks) => {
+            let arr: Vec<JsonValue> = marks.into_iter().map(|m| json!({
+                "name": m.name(),
+                "value": scalar_to_json_value(m.value()),
+                "start": m.start,
+                "end": m.end,
+            })).collect();
+            write_json_out(JsonValue::Array(arr), out_json, out_len)
+        }
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+/// Get a cursor for a position in a text object. Returns cursor as a string.
+/// Caller frees with `AMfree_bytes(ptr, len + 1)`.
+#[no_mangle]
+pub unsafe extern "C" fn AMget_cursor(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    position: usize,
+    heads: *const u8,
+    heads_len: usize,
+    out_cursor: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_cursor);
+    check_ptr!(out_len);
+    let oid = match read_obj_id(obj_id) {
+        Ok(id) => id,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let h = if heads.is_null() || heads_len == 0 {
+        None
+    } else {
+        Some(parse_heads(heads, heads_len))
+    };
+    match (*doc).0.get_cursor(&oid, position, h.as_deref()) {
+        Ok(cursor) => write_cstring_out(cursor.to_string(), out_cursor, out_len),
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+/// Resolve a cursor string to a position. Returns position as usize.
+#[no_mangle]
+pub unsafe extern "C" fn AMget_cursor_position(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    cursor_str: *const c_char,
+    heads: *const u8,
+    heads_len: usize,
+    out_position: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(cursor_str);
+    check_ptr!(out_position);
+    let oid = match read_obj_id(obj_id) {
+        Ok(id) => id,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let cs = match c_str_to_str(cursor_str) {
+        Ok(s) => s,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let cursor: Cursor = match cs.try_into() {
+        Ok(c) => c,
+        Err(e) => { set_last_error(format!("invalid cursor: {}", e)); return AM_ERR; }
+    };
+    let h = if heads.is_null() || heads_len == 0 {
+        None
+    } else {
+        Some(parse_heads(heads, heads_len))
+    };
+    match (*doc).0.get_cursor_position(&oid, &cursor, h.as_deref()) {
+        Ok(pos) => { *out_position = pos; AM_OK }
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+/// Get rich text spans for a text object. Returns JSON array:
+/// `[{"type":"text","value":"hello"},{"type":"block","value":{...}},...]`
+/// Caller frees with `AMfree_bytes(ptr, len + 1)`.
+#[no_mangle]
+pub unsafe extern "C" fn AMspans(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    out_json: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_json);
+    check_ptr!(out_len);
+    let oid = match read_obj_id(obj_id) {
+        Ok(id) => id,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    match (*doc).0.spans(&oid) {
+        Ok(spans) => {
+            let arr: Vec<JsonValue> = spans.map(|span| {
+                match span {
+                    automerge::iter::Span::Text(text, _) => json!({
+                        "type": "text",
+                        "value": text,
+                    }),
+                    automerge::iter::Span::Block(block_map) => json!({
+                        "type": "block",
+                        "value": format!("{:?}", block_map),
+                    }),
+                    _ => json!({
+                        "type": "other",
+                    }),
+                }
+            }).collect();
+            write_json_out(JsonValue::Array(arr), out_json, out_len)
+        }
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+/// Get document statistics. Returns JSON object.
+/// Caller frees with `AMfree_bytes(ptr, len + 1)`.
+#[no_mangle]
+pub unsafe extern "C" fn AMstats(
+    doc: *mut AMdoc,
+    out_json: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_json);
+    check_ptr!(out_len);
+    // stats() returns a Stats struct; serialize its fields
+    // The struct has undetermined fields; let's use Debug format as JSON string
+    let stats = (*doc).0.stats();
+    write_json_out(json!(format!("{:?}", stats)), out_json, out_len)
+}
+
+/// Get entries from a map in a key range. start/end are C strings (NUL or empty = unbounded).
+/// Returns JSON array of `[key, value_json]` pairs. Caller frees with `AMfree_bytes(ptr, len + 1)`.
+#[no_mangle]
+pub unsafe extern "C" fn AMmap_range(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    start: *const c_char,
+    end: *const c_char,
+    out_json: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_json);
+    check_ptr!(out_len);
+    let oid = match read_obj_id(obj_id) {
+        Ok(id) => id,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let start_key = if start.is_null() { "" } else { match c_str_to_str(start) { Ok(s) => s, Err(e) => { set_last_error(e); return AM_ERR; }} };
+    let end_key   = if end.is_null()   { "" } else { match c_str_to_str(end)   { Ok(s) => s, Err(e) => { set_last_error(e); return AM_ERR; }} };
+    let entries: Vec<JsonValue> = if start_key.is_empty() && end_key.is_empty() {
+        (*doc).0.map_range(&oid, ..).map(|item| json!([item.key, value_to_json(&item.value, &item.id)])).collect()
+    } else if start_key.is_empty() {
+        (*doc).0.map_range(&oid, ..end_key.to_string()).map(|item| json!([item.key, value_to_json(&item.value, &item.id)])).collect()
+    } else if end_key.is_empty() {
+        (*doc).0.map_range(&oid, start_key.to_string()..).map(|item| json!([item.key, value_to_json(&item.value, &item.id)])).collect()
+    } else {
+        (*doc).0.map_range(&oid, start_key.to_string()..end_key.to_string()).map(|item| json!([item.key, value_to_json(&item.value, &item.id)])).collect()
+    };
+    write_json_out(JsonValue::Array(entries), out_json, out_len)
+}
+
+/// Get entries from a list in an index range.
+/// Returns JSON array of values. Caller frees with `AMfree_bytes(ptr, len + 1)`.
+#[no_mangle]
+pub unsafe extern "C" fn AMlist_range(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    start: usize,
+    end: usize,
+    out_json: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_json);
+    check_ptr!(out_len);
+    let oid = match read_obj_id(obj_id) {
+        Ok(id) => id,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    let entries: Vec<JsonValue> = (*doc).0.list_range(&oid, start..end)
+        .map(|item| value_to_json(&item.value, &item.id))
+        .collect();
+    write_json_out(JsonValue::Array(entries), out_json, out_len)
+}
 
 
 /// Move a `Vec<u8>` to the heap; return raw pointer.

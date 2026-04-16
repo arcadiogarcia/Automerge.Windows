@@ -308,6 +308,91 @@ int AMget_all(const AMdoc* doc, const char* obj_id, const char* key,
 /// @return AM_OK on success.
 int AMdiff_incremental(AMdoc* doc, uint8_t** out_json, size_t* out_len);
 
+// ─── New APIs: closing gap with JS @automerge/automerge ──────────────────────
+
+/// Get ALL changes in the document. Equivalent to JS getAllChanges().
+int AMget_all_changes(AMdoc* doc, uint8_t** out_changes, size_t* out_len);
+
+/// Get the binary representation of the last locally-made change.
+/// Returns 0-length if no local change exists.
+int AMget_last_local_change(AMdoc* doc, uint8_t** out_bytes, size_t* out_len);
+
+/// Get change hashes needed to reach `heads` that are missing from the document.
+int AMget_missing_deps(AMdoc* doc, const uint8_t* heads, size_t heads_len,
+                       uint8_t** out_heads, size_t* out_len);
+
+/// Create an empty change (no operations).
+int AMempty_change(AMdoc* doc, const char* message, int64_t timestamp);
+
+/// Save only changes since `heads`. Equivalent to JS saveSince(heads).
+int AMsave_after(AMdoc* doc, const uint8_t* heads, size_t heads_len,
+                 uint8_t** out_bytes, size_t* out_len);
+
+/// Load incremental changes into an existing document.
+int AMload_incremental(AMdoc* doc, const uint8_t* data, size_t len);
+
+/// Fork at specific heads (immutable snapshot). Equivalent to JS view(heads)/forkAt.
+int AMfork_at(AMdoc* doc, const uint8_t* heads, size_t heads_len, AMdoc** out_doc);
+
+/// Get the object type ("map", "list", "text") as JSON string.
+int AMobject_type(AMdoc* doc, const char* obj_id, uint8_t** out_json, size_t* out_len);
+
+/// Diff between two sets of heads. Returns JSON patch array.
+int AMdiff(AMdoc* doc,
+           const uint8_t* before_heads, size_t before_heads_len,
+           const uint8_t* after_heads, size_t after_heads_len,
+           uint8_t** out_json, size_t* out_len);
+
+/// Update a text object by diffing old vs new text. Equivalent to JS updateText.
+int AMupdate_text(AMdoc* doc, const char* obj_id, const char* new_text);
+
+/// Add a rich text mark to a range.
+/// expand: 0=none, 1=before, 2=after, 3=both.
+int AMmark(AMdoc* doc, const char* obj_id,
+           size_t start, size_t end,
+           const char* name, const char* value_json, uint8_t expand);
+
+/// Remove a mark from a range.
+/// expand: 0=none, 1=before, 2=after, 3=both.
+int AMunmark(AMdoc* doc, const char* obj_id,
+             const char* name, size_t start, size_t end, uint8_t expand);
+
+/// Get all marks on a text object. Returns JSON array.
+int AMmarks(AMdoc* doc, const char* obj_id, uint8_t** out_json, size_t* out_len);
+
+/// Get marks at specific heads. Returns JSON array.
+int AMmarks_at(AMdoc* doc, const char* obj_id,
+               const uint8_t* heads, size_t heads_len,
+               uint8_t** out_json, size_t* out_len);
+
+/// Get a cursor for a position in a text object.
+/// heads may be NULL for current version.
+int AMget_cursor(AMdoc* doc, const char* obj_id, size_t position,
+                 const uint8_t* heads, size_t heads_len,
+                 uint8_t** out_cursor, size_t* out_len);
+
+/// Resolve a cursor to a position.
+/// heads may be NULL for current version.
+int AMget_cursor_position(AMdoc* doc, const char* obj_id, const char* cursor_str,
+                          const uint8_t* heads, size_t heads_len,
+                          size_t* out_position);
+
+/// Get rich text spans. Returns JSON array.
+int AMspans(AMdoc* doc, const char* obj_id, uint8_t** out_json, size_t* out_len);
+
+/// Get document statistics. Returns JSON string.
+int AMstats(AMdoc* doc, uint8_t** out_json, size_t* out_len);
+
+/// Get map entries in a key range. start/end may be NULL for unbounded.
+int AMmap_range(AMdoc* doc, const char* obj_id,
+                const char* start, const char* end,
+                uint8_t** out_json, size_t* out_len);
+
+/// Get list entries in an index range.
+int AMlist_range(AMdoc* doc, const char* obj_id,
+                 size_t start, size_t end,
+                 uint8_t** out_json, size_t* out_len);
+
 // ─── Sync ─────────────────────────────────────────────────────────────────────
 
 /// Create a new sync state.  Ownership is transferred to caller.

@@ -120,6 +120,69 @@ namespace Automerge.Windows
         // ─── Diff / patches ──────────────────────────────────────────────
 
         String DiffIncremental();
+
+        // ─── New APIs: closing gap with JS @automerge/automerge ──────────
+
+        /// Get ALL changes as concatenated bytes.
+        Windows.Storage.Streams.IBuffer GetAllChanges();
+
+        /// Get the last locally-made change as bytes.
+        Windows.Storage.Streams.IBuffer GetLastLocalChange();
+
+        /// Get missing dependency hashes needed to reach `heads`.
+        Windows.Storage.Streams.IBuffer GetMissingDeps(Windows.Storage.Streams.IBuffer heads);
+
+        /// Create an empty change.
+        void EmptyChange(String message, Int64 timestamp);
+
+        /// Save changes since `heads`.
+        Windows.Storage.Streams.IBuffer SaveAfter(Windows.Storage.Streams.IBuffer heads);
+
+        /// Load incremental changes into this document.
+        void LoadIncremental(Windows.Storage.Streams.IBuffer data);
+
+        /// Fork at specific heads (historical snapshot).
+        Document ForkAt(Windows.Storage.Streams.IBuffer heads);
+
+        /// Get object type ("map", "list", "text") as JSON string.
+        String ObjectType(String objId);
+
+        /// Diff between two heads. Returns JSON patch array.
+        String Diff(Windows.Storage.Streams.IBuffer beforeHeads, Windows.Storage.Streams.IBuffer afterHeads);
+
+        /// Update text by diffing (JS updateText).
+        void UpdateText(String textObjId, String newText);
+
+        /// Add a rich text mark. expand: 0=none, 1=before, 2=after, 3=both.
+        void Mark(String textObjId, Int32 start, Int32 end,
+                  String name, String valueJson, UInt8 expand);
+
+        /// Remove a mark.
+        void Unmark(String textObjId, String name, Int32 start, Int32 end, UInt8 expand);
+
+        /// Get all marks. Returns JSON array.
+        String GetMarks(String textObjId);
+
+        /// Get marks at specific heads. Returns JSON array.
+        String GetMarksAt(String textObjId, Windows.Storage.Streams.IBuffer heads);
+
+        /// Get a cursor for a text position.
+        String GetCursor(String textObjId, Int32 position);
+
+        /// Resolve a cursor to a position.
+        Int32 GetCursorPosition(String textObjId, String cursor);
+
+        /// Get rich text spans. Returns JSON array.
+        String GetSpans(String textObjId);
+
+        /// Get document statistics as JSON.
+        String GetStats();
+
+        /// Get map entries in a key range. Empty string = unbounded.
+        String MapRange(String objId, String start, String end);
+
+        /// Get list entries in an index range.
+        String ListRange(String objId, Int32 start, Int32 end);
     }
 
     // ─── SyncState ────────────────────────────────────────────────────────────

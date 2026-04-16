@@ -287,5 +287,142 @@ std::string Document::diff_incremental() {
     return take_json(ptr, len);
 }
 
+// ─── New APIs ────────────────────────────────────────────────────────────────
+
+std::vector<uint8_t> Document::get_all_changes() const {
+    uint8_t* ptr{}; size_t len{};
+    check(AMget_all_changes(handle_, &ptr, &len));
+    return take_cbuf(ptr, len);
+}
+
+std::vector<uint8_t> Document::get_last_local_change() const {
+    uint8_t* ptr{}; size_t len{};
+    check(AMget_last_local_change(handle_, &ptr, &len));
+    return take_cbuf(ptr, len);
+}
+
+std::vector<uint8_t> Document::get_missing_deps(std::span<const uint8_t> heads) const {
+    uint8_t* ptr{}; size_t len{};
+    check(AMget_missing_deps(handle_, heads.data(), heads.size(), &ptr, &len));
+    return take_cbuf(ptr, len);
+}
+
+void Document::empty_change(const std::string& message, int64_t timestamp) {
+    const char* msg = message.empty() ? nullptr : message.c_str();
+    check(AMempty_change(handle_, msg, timestamp));
+}
+
+std::vector<uint8_t> Document::save_after(std::span<const uint8_t> heads) const {
+    uint8_t* ptr{}; size_t len{};
+    check(AMsave_after(handle_, heads.data(), heads.size(), &ptr, &len));
+    return take_cbuf(ptr, len);
+}
+
+void Document::load_incremental(std::span<const uint8_t> data) {
+    check(AMload_incremental(handle_, data.data(), data.size()));
+}
+
+Document Document::fork_at(std::span<const uint8_t> heads) {
+    AMdoc* out{};
+    int rc = AMfork_at(handle_, heads.data(), heads.size(), &out);
+    if (rc != AM_OK) {
+        char buf[512]{};
+        AMget_last_error(buf, sizeof(buf));
+        throw AutomergeError(buf);
+    }
+    return Document(out);
+}
+
+std::string Document::object_type(const ObjId& obj_id) const {
+    uint8_t* ptr{}; size_t len{};
+    const char* oid = obj_id.empty() ? nullptr : obj_id.c_str();
+    check(AMobject_type(handle_, oid, &ptr, &len));
+    return take_json(ptr, len);
+}
+
+std::string Document::diff(std::span<const uint8_t> before_heads,
+                           std::span<const uint8_t> after_heads) const {
+    uint8_t* ptr{}; size_t len{};
+    check(AMdiff(handle_, before_heads.data(), before_heads.size(),
+                 after_heads.data(), after_heads.size(), &ptr, &len));
+    return take_json(ptr, len);
+}
+
+void Document::update_text(const ObjId& obj_id, const std::string& new_text) {
+    check(AMupdate_text(handle_, obj_id.c_str(), new_text.c_str()));
+}
+
+void Document::mark(const ObjId& obj_id, size_t start, size_t end,
+                    const std::string& name, const std::string& value_json,
+                    uint8_t expand) {
+    check(AMmark(handle_, obj_id.c_str(), start, end,
+                 name.c_str(), value_json.c_str(), expand));
+}
+
+void Document::unmark(const ObjId& obj_id, const std::string& name,
+                      size_t start, size_t end, uint8_t expand) {
+    check(AMunmark(handle_, obj_id.c_str(), name.c_str(), start, end, expand));
+}
+
+std::string Document::marks(const ObjId& obj_id) const {
+    uint8_t* ptr{}; size_t len{};
+    check(AMmarks(handle_, obj_id.c_str(), &ptr, &len));
+    return take_json(ptr, len);
+}
+
+std::string Document::marks_at(const ObjId& obj_id,
+                               std::span<const uint8_t> heads) const {
+    uint8_t* ptr{}; size_t len{};
+    check(AMmarks_at(handle_, obj_id.c_str(), heads.data(), heads.size(), &ptr, &len));
+    return take_json(ptr, len);
+}
+
+std::string Document::get_cursor(const ObjId& obj_id, size_t position,
+                                 std::span<const uint8_t> heads) const {
+    uint8_t* ptr{}; size_t len{};
+    check(AMget_cursor(handle_, obj_id.c_str(), position,
+                       heads.data(), heads.size(), &ptr, &len));
+    return take_cstring(ptr, len);
+}
+
+size_t Document::get_cursor_position(const ObjId& obj_id,
+                                     const std::string& cursor,
+                                     std::span<const uint8_t> heads) const {
+    size_t pos{};
+    check(AMget_cursor_position(handle_, obj_id.c_str(), cursor.c_str(),
+                                heads.data(), heads.size(), &pos));
+    return pos;
+}
+
+std::string Document::spans(const ObjId& obj_id) const {
+    uint8_t* ptr{}; size_t len{};
+    check(AMspans(handle_, obj_id.c_str(), &ptr, &len));
+    return take_json(ptr, len);
+}
+
+std::string Document::stats() const {
+    uint8_t* ptr{}; size_t len{};
+    check(AMstats(handle_, &ptr, &len));
+    return take_json(ptr, len);
+}
+
+std::string Document::map_range(const ObjId& obj_id,
+                                const std::string& start,
+                                const std::string& end) const {
+    uint8_t* ptr{}; size_t len{};
+    const char* oid = obj_id.empty() ? nullptr : obj_id.c_str();
+    const char* s = start.empty() ? nullptr : start.c_str();
+    const char* e = end.empty()   ? nullptr : end.c_str();
+    check(AMmap_range(handle_, oid, s, e, &ptr, &len));
+    return take_json(ptr, len);
+}
+
+std::string Document::list_range(const ObjId& obj_id,
+                                 size_t start, size_t end) const {
+    uint8_t* ptr{}; size_t len{};
+    check(AMlist_range(handle_, obj_id.c_str(), start, end, &ptr, &len));
+    return take_json(ptr, len);
+}
+
 } // namespace automerge
 

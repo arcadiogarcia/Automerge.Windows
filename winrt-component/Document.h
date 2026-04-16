@@ -70,6 +70,36 @@ struct Document : DocumentT<Document>
     // Diff
     hstring DiffIncremental();
 
+    // ─── New APIs ────────────────────────────────────────────────────────
+
+    winrt::Windows::Storage::Streams::IBuffer GetAllChanges();
+    winrt::Windows::Storage::Streams::IBuffer GetLastLocalChange();
+    winrt::Windows::Storage::Streams::IBuffer GetMissingDeps(
+        winrt::Windows::Storage::Streams::IBuffer const& heads);
+    void EmptyChange(hstring const& message, int64_t timestamp);
+    winrt::Windows::Storage::Streams::IBuffer SaveAfter(
+        winrt::Windows::Storage::Streams::IBuffer const& heads);
+    void LoadIncremental(winrt::Windows::Storage::Streams::IBuffer const& data);
+    winrt::Automerge::Windows::Document ForkAt(
+        winrt::Windows::Storage::Streams::IBuffer const& heads);
+    hstring ObjectType(hstring const& objId);
+    hstring Diff(winrt::Windows::Storage::Streams::IBuffer const& beforeHeads,
+                 winrt::Windows::Storage::Streams::IBuffer const& afterHeads);
+    void UpdateText(hstring const& textObjId, hstring const& newText);
+    void Mark(hstring const& textObjId, int32_t start, int32_t end,
+              hstring const& name, hstring const& valueJson, uint8_t expand);
+    void Unmark(hstring const& textObjId, hstring const& name,
+                int32_t start, int32_t end, uint8_t expand);
+    hstring GetMarks(hstring const& textObjId);
+    hstring GetMarksAt(hstring const& textObjId,
+                       winrt::Windows::Storage::Streams::IBuffer const& heads);
+    hstring GetCursor(hstring const& textObjId, int32_t position);
+    int32_t GetCursorPosition(hstring const& textObjId, hstring const& cursor);
+    hstring GetSpans(hstring const& textObjId);
+    hstring GetStats();
+    hstring MapRange(hstring const& objId, hstring const& start, hstring const& end);
+    hstring ListRange(hstring const& objId, int32_t start, int32_t end);
+
     // Internal
     ::automerge::Document& native_doc() noexcept { return doc_; }
 

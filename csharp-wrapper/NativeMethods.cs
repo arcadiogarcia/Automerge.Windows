@@ -145,6 +145,96 @@ namespace Automerge.Windows
         [LibraryImport(Lib)] internal static partial int AMdiff_incremental(
             IntPtr doc, ref IntPtr out_json, ref nuint out_len);
 
+        // ─── New APIs ───────────────────────────────────────────────────────
+
+        [LibraryImport(Lib)] internal static partial int AMget_all_changes(
+            IntPtr doc, ref IntPtr out_changes, ref nuint out_len);
+
+        [LibraryImport(Lib)] internal static partial int AMget_last_local_change(
+            IntPtr doc, ref IntPtr out_bytes, ref nuint out_len);
+
+        [LibraryImport(Lib)] internal static partial int AMget_missing_deps(
+            IntPtr doc, byte* heads, nuint heads_len,
+            ref IntPtr out_heads, ref nuint out_len);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMempty_change(
+            IntPtr doc, string? message, long timestamp);
+
+        [LibraryImport(Lib)] internal static partial int AMsave_after(
+            IntPtr doc, byte* heads, nuint heads_len,
+            ref IntPtr out_bytes, ref nuint out_len);
+
+        [LibraryImport(Lib)] internal static partial int AMload_incremental(
+            IntPtr doc, byte* data, nuint len);
+
+        [LibraryImport(Lib)] internal static partial int AMfork_at(
+            IntPtr doc, byte* heads, nuint heads_len, ref IntPtr out_doc);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMobject_type(
+            IntPtr doc, string? obj_id, ref IntPtr out_json, ref nuint out_len);
+
+        [LibraryImport(Lib)] internal static partial int AMdiff(
+            IntPtr doc,
+            byte* before_heads, nuint before_heads_len,
+            byte* after_heads, nuint after_heads_len,
+            ref IntPtr out_json, ref nuint out_len);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMupdate_text(
+            IntPtr doc, string obj_id, string new_text);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMmark(
+            IntPtr doc, string obj_id,
+            nuint start, nuint end,
+            string name, string value_json, byte expand);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMunmark(
+            IntPtr doc, string obj_id,
+            string name, nuint start, nuint end, byte expand);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMmarks(
+            IntPtr doc, string obj_id, ref IntPtr out_json, ref nuint out_len);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMmarks_at(
+            IntPtr doc, string obj_id,
+            byte* heads, nuint heads_len,
+            ref IntPtr out_json, ref nuint out_len);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMget_cursor(
+            IntPtr doc, string obj_id, nuint position,
+            byte* heads, nuint heads_len,
+            ref IntPtr out_cursor, ref nuint out_len);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMget_cursor_position(
+            IntPtr doc, string obj_id, string cursor_str,
+            byte* heads, nuint heads_len,
+            ref nuint out_position);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMspans(
+            IntPtr doc, string obj_id, ref IntPtr out_json, ref nuint out_len);
+
+        [LibraryImport(Lib)] internal static partial int AMstats(
+            IntPtr doc, ref IntPtr out_json, ref nuint out_len);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMmap_range(
+            IntPtr doc, string? obj_id, string? start, string? end,
+            ref IntPtr out_json, ref nuint out_len);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMlist_range(
+            IntPtr doc, string obj_id, nuint start, nuint end,
+            ref IntPtr out_json, ref nuint out_len);
+
         // ─── Sync ───────────────────────────────────────────────────────────
         [LibraryImport(Lib)] internal static partial IntPtr AMcreate_sync_state();
         [LibraryImport(Lib)] internal static partial void AMfree_sync_state(IntPtr state);

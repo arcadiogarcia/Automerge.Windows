@@ -222,5 +222,150 @@ hstring Document::DiffIncremental() {
     catch (const std::exception& ex) { throw_winrt_error(ex); }
 }
 
+// ─── New APIs ────────────────────────────────────────────────────────────────
+
+winrt::Windows::Storage::Streams::IBuffer Document::GetAllChanges() {
+    try { return bytes_to_ibuffer(doc_.get_all_changes()); }
+    catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+winrt::Windows::Storage::Streams::IBuffer Document::GetLastLocalChange() {
+    try { return bytes_to_ibuffer(doc_.get_last_local_change()); }
+    catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+winrt::Windows::Storage::Streams::IBuffer Document::GetMissingDeps(
+    winrt::Windows::Storage::Streams::IBuffer const& heads)
+{
+    try {
+        auto h = ibuffer_to_bytes(heads);
+        return bytes_to_ibuffer(doc_.get_missing_deps(h));
+    } catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+void Document::EmptyChange(hstring const& message, int64_t timestamp) {
+    try { doc_.empty_change(hstring_to_string(message), timestamp); }
+    catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+winrt::Windows::Storage::Streams::IBuffer Document::SaveAfter(
+    winrt::Windows::Storage::Streams::IBuffer const& heads)
+{
+    try {
+        auto h = ibuffer_to_bytes(heads);
+        return bytes_to_ibuffer(doc_.save_after(h));
+    } catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+void Document::LoadIncremental(winrt::Windows::Storage::Streams::IBuffer const& data) {
+    try { doc_.load_incremental(ibuffer_to_bytes(data)); }
+    catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+winrt::Automerge::Windows::Document Document::ForkAt(
+    winrt::Windows::Storage::Streams::IBuffer const& heads)
+{
+    try {
+        auto h = ibuffer_to_bytes(heads);
+        auto forked = doc_.fork_at(h);
+        auto impl = winrt::make<implementation::Document>();
+        winrt::get_self<implementation::Document>(impl)->native_doc() = std::move(forked);
+        return impl;
+    } catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+hstring Document::ObjectType(hstring const& objId) {
+    try { return string_to_hstring(doc_.object_type(hstring_to_string(objId))); }
+    catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+hstring Document::Diff(winrt::Windows::Storage::Streams::IBuffer const& beforeHeads,
+                       winrt::Windows::Storage::Streams::IBuffer const& afterHeads)
+{
+    try {
+        auto b = ibuffer_to_bytes(beforeHeads);
+        auto a = ibuffer_to_bytes(afterHeads);
+        return string_to_hstring(doc_.diff(b, a));
+    } catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+void Document::UpdateText(hstring const& textObjId, hstring const& newText) {
+    try { doc_.update_text(hstring_to_string(textObjId), hstring_to_string(newText)); }
+    catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+void Document::Mark(hstring const& textObjId, int32_t start, int32_t end,
+                    hstring const& name, hstring const& valueJson, uint8_t expand)
+{
+    try {
+        doc_.mark(hstring_to_string(textObjId), static_cast<size_t>(start),
+                  static_cast<size_t>(end), hstring_to_string(name),
+                  hstring_to_string(valueJson), expand);
+    } catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+void Document::Unmark(hstring const& textObjId, hstring const& name,
+                      int32_t start, int32_t end, uint8_t expand)
+{
+    try {
+        doc_.unmark(hstring_to_string(textObjId), hstring_to_string(name),
+                    static_cast<size_t>(start), static_cast<size_t>(end), expand);
+    } catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+hstring Document::GetMarks(hstring const& textObjId) {
+    try { return string_to_hstring(doc_.marks(hstring_to_string(textObjId))); }
+    catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+hstring Document::GetMarksAt(hstring const& textObjId,
+                             winrt::Windows::Storage::Streams::IBuffer const& heads)
+{
+    try {
+        auto h = ibuffer_to_bytes(heads);
+        return string_to_hstring(doc_.marks_at(hstring_to_string(textObjId), h));
+    } catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+hstring Document::GetCursor(hstring const& textObjId, int32_t position) {
+    try {
+        return string_to_hstring(
+            doc_.get_cursor(hstring_to_string(textObjId), static_cast<size_t>(position)));
+    } catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+int32_t Document::GetCursorPosition(hstring const& textObjId, hstring const& cursor) {
+    try {
+        return static_cast<int32_t>(
+            doc_.get_cursor_position(hstring_to_string(textObjId), hstring_to_string(cursor)));
+    } catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+hstring Document::GetSpans(hstring const& textObjId) {
+    try { return string_to_hstring(doc_.spans(hstring_to_string(textObjId))); }
+    catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+hstring Document::GetStats() {
+    try { return string_to_hstring(doc_.stats()); }
+    catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+hstring Document::MapRange(hstring const& objId, hstring const& start, hstring const& end) {
+    try {
+        return string_to_hstring(
+            doc_.map_range(hstring_to_string(objId), hstring_to_string(start),
+                           hstring_to_string(end)));
+    } catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+hstring Document::ListRange(hstring const& objId, int32_t start, int32_t end) {
+    try {
+        return string_to_hstring(
+            doc_.list_range(hstring_to_string(objId),
+                            static_cast<size_t>(start), static_cast<size_t>(end)));
+    } catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
 } // namespace winrt::Automerge::Windows::implementation
 

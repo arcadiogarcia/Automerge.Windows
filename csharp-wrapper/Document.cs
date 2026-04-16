@@ -447,6 +447,233 @@ namespace Automerge.Windows
                 NativeMethods.AMdiff_incremental(_handle, ref ptr, ref len));
         }
 
+        // ─── New APIs: closing gap with JS @automerge/automerge ───────────────
+
+        /// <summary>Get ALL changes as concatenated bytes (JS getAllChanges).</summary>
+        public byte[] GetAllChanges()
+        {
+            ThrowIfDisposed();
+            return NativeMethods.InvokeWithBytes((ref IntPtr ptr, ref nuint len) =>
+                NativeMethods.AMget_all_changes(_handle, ref ptr, ref len));
+        }
+
+        /// <summary>Get the binary representation of the last locally-made change.</summary>
+        public byte[] GetLastLocalChange()
+        {
+            ThrowIfDisposed();
+            return NativeMethods.InvokeWithBytes((ref IntPtr ptr, ref nuint len) =>
+                NativeMethods.AMget_last_local_change(_handle, ref ptr, ref len));
+        }
+
+        /// <summary>Get missing dependency hashes needed to reach <paramref name="heads"/>.</summary>
+        public unsafe byte[] GetMissingDeps(ReadOnlySpan<byte> heads)
+        {
+            ThrowIfDisposed();
+            IntPtr ptr = IntPtr.Zero;
+            nuint len = 0;
+            fixed (byte* h = heads)
+            {
+                NativeMethods.CheckResult(
+                    NativeMethods.AMget_missing_deps(_handle, h, (nuint)heads.Length, ref ptr, ref len));
+            }
+            return NativeMethods.ReadAndFree(ptr, len);
+        }
+
+        /// <summary>Create an empty change (no operations).</summary>
+        public void EmptyChange(string? message = null, long timestamp = 0)
+        {
+            ThrowIfDisposed();
+            NativeMethods.CheckResult(
+                NativeMethods.AMempty_change(_handle, message, timestamp));
+        }
+
+        /// <summary>Save only changes since <paramref name="heads"/> (JS saveSince).</summary>
+        public unsafe byte[] SaveAfter(ReadOnlySpan<byte> heads)
+        {
+            ThrowIfDisposed();
+            IntPtr ptr = IntPtr.Zero;
+            nuint len = 0;
+            fixed (byte* h = heads)
+            {
+                NativeMethods.CheckResult(
+                    NativeMethods.AMsave_after(_handle, h, (nuint)heads.Length, ref ptr, ref len));
+            }
+            return NativeMethods.ReadAndFree(ptr, len);
+        }
+
+        /// <summary>Load incremental changes into this document (JS loadIncremental).</summary>
+        public unsafe void LoadIncremental(ReadOnlySpan<byte> data)
+        {
+            ThrowIfDisposed();
+            fixed (byte* d = data)
+            {
+                NativeMethods.CheckResult(
+                    NativeMethods.AMload_incremental(_handle, d, (nuint)data.Length));
+            }
+        }
+
+        /// <summary>Fork at specific heads (snapshot at a point in history).</summary>
+        public unsafe Document ForkAt(ReadOnlySpan<byte> heads)
+        {
+            ThrowIfDisposed();
+            IntPtr outDoc = IntPtr.Zero;
+            fixed (byte* h = heads)
+            {
+                NativeMethods.CheckResult(
+                    NativeMethods.AMfork_at(_handle, h, (nuint)heads.Length, ref outDoc));
+            }
+            return new Document(outDoc);
+        }
+
+        /// <summary>Get the object type ("map", "list", "text").</summary>
+        public string ObjectType(string? objId = null)
+        {
+            ThrowIfDisposed();
+            return ReadJson((ref IntPtr ptr, ref nuint len) =>
+                NativeMethods.AMobject_type(_handle, objId.AsNullableC(), ref ptr, ref len));
+        }
+
+        /// <summary>Diff between two sets of heads. Returns JSON patch array.</summary>
+        public unsafe string Diff(ReadOnlySpan<byte> beforeHeads, ReadOnlySpan<byte> afterHeads)
+        {
+            ThrowIfDisposed();
+            IntPtr ptr = IntPtr.Zero;
+            nuint len = 0;
+            fixed (byte* b = beforeHeads)
+            fixed (byte* a = afterHeads)
+            {
+                NativeMethods.CheckResult(
+                    NativeMethods.AMdiff(_handle,
+                        b, (nuint)beforeHeads.Length,
+                        a, (nuint)afterHeads.Length,
+                        ref ptr, ref len));
+            }
+            if (ptr == IntPtr.Zero) return "[]";
+            var bytes = new byte[(int)len];
+            Marshal.Copy(ptr, bytes, 0, (int)len);
+            NativeMethods.AMfree_bytes(ptr, len + 1);
+            return Encoding.UTF8.GetString(bytes);
+        }
+
+        /// <summary>Update a text object by diffing old vs new text (JS updateText).</summary>
+        public void UpdateText(string objId, string newText)
+        {
+            ThrowIfDisposed();
+            NativeMethods.CheckResult(
+                NativeMethods.AMupdate_text(_handle, objId, newText));
+        }
+
+        /// <summary>Add a rich text mark. expand: 0=none, 1=before, 2=after, 3=both.</summary>
+        public void Mark(string objId, int start, int end,
+                         string name, string valueJson, byte expand = 3)
+        {
+            ThrowIfDisposed();
+            NativeMethods.CheckResult(
+                NativeMethods.AMmark(_handle, objId,
+                    (nuint)start, (nuint)end, name, valueJson, expand));
+        }
+
+        /// <summary>Remove a mark. expand: 0=none, 1=before, 2=after, 3=both.</summary>
+        public void Unmark(string objId, string name, int start, int end, byte expand = 3)
+        {
+            ThrowIfDisposed();
+            NativeMethods.CheckResult(
+                NativeMethods.AMunmark(_handle, objId, name,
+                    (nuint)start, (nuint)end, expand));
+        }
+
+        /// <summary>Get all marks on a text object. Returns JSON array.</summary>
+        public string GetMarks(string objId)
+        {
+            ThrowIfDisposed();
+            return ReadJson((ref IntPtr ptr, ref nuint len) =>
+                NativeMethods.AMmarks(_handle, objId, ref ptr, ref len));
+        }
+
+        /// <summary>Get marks at specific heads. Returns JSON array.</summary>
+        public unsafe string GetMarksAt(string objId, ReadOnlySpan<byte> heads)
+        {
+            ThrowIfDisposed();
+            IntPtr ptr = IntPtr.Zero;
+            nuint len = 0;
+            fixed (byte* h = heads)
+            {
+                NativeMethods.CheckResult(
+                    NativeMethods.AMmarks_at(_handle, objId, h, (nuint)heads.Length,
+                        ref ptr, ref len));
+            }
+            if (ptr == IntPtr.Zero) return "[]";
+            var bytes = new byte[(int)len];
+            Marshal.Copy(ptr, bytes, 0, (int)len);
+            NativeMethods.AMfree_bytes(ptr, len + 1);
+            return Encoding.UTF8.GetString(bytes);
+        }
+
+        /// <summary>Get a cursor for a position in a text object.</summary>
+        public unsafe string GetCursor(string objId, int position,
+                                       ReadOnlySpan<byte> heads = default)
+        {
+            ThrowIfDisposed();
+            IntPtr ptr = IntPtr.Zero;
+            nuint len = 0;
+            fixed (byte* h = heads)
+            {
+                NativeMethods.CheckResult(
+                    NativeMethods.AMget_cursor(_handle, objId, (nuint)position,
+                        h, (nuint)heads.Length, ref ptr, ref len));
+            }
+            return ReadCString(ptr, len);
+        }
+
+        /// <summary>Resolve a cursor to a position.</summary>
+        public unsafe int GetCursorPosition(string objId, string cursor,
+                                            ReadOnlySpan<byte> heads = default)
+        {
+            ThrowIfDisposed();
+            nuint pos = 0;
+            fixed (byte* h = heads)
+            {
+                NativeMethods.CheckResult(
+                    NativeMethods.AMget_cursor_position(_handle, objId, cursor,
+                        h, (nuint)heads.Length, ref pos));
+            }
+            return (int)pos;
+        }
+
+        /// <summary>Get rich text spans. Returns JSON array.</summary>
+        public string GetSpans(string objId)
+        {
+            ThrowIfDisposed();
+            return ReadJson((ref IntPtr ptr, ref nuint len) =>
+                NativeMethods.AMspans(_handle, objId, ref ptr, ref len));
+        }
+
+        /// <summary>Get document statistics as JSON.</summary>
+        public string GetStats()
+        {
+            ThrowIfDisposed();
+            return ReadJson((ref IntPtr ptr, ref nuint len) =>
+                NativeMethods.AMstats(_handle, ref ptr, ref len));
+        }
+
+        /// <summary>Get map entries in a key range. null = unbounded.</summary>
+        public string MapRange(string? objId = null, string? start = null, string? end = null)
+        {
+            ThrowIfDisposed();
+            return ReadJson((ref IntPtr ptr, ref nuint len) =>
+                NativeMethods.AMmap_range(_handle, objId.AsNullableC(),
+                    start, end, ref ptr, ref len));
+        }
+
+        /// <summary>Get list entries in an index range.</summary>
+        public string ListRange(string objId, int start, int end)
+        {
+            ThrowIfDisposed();
+            return ReadJson((ref IntPtr ptr, ref nuint len) =>
+                NativeMethods.AMlist_range(_handle, objId,
+                    (nuint)start, (nuint)end, ref ptr, ref len));
+        }
+
         // ─── Internal ─────────────────────────────────────────────────────────
 
         internal IntPtr Handle => _handle;

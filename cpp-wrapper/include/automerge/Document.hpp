@@ -178,6 +178,81 @@ public:
     /// Returns a JSON array string.
     std::string diff_incremental();
 
+    // ─── New APIs: closing gap with JS @automerge/automerge ────────────────
+
+    /// Get ALL changes (equivalent to JS getAllChanges).
+    [[nodiscard]] std::vector<uint8_t> get_all_changes() const;
+
+    /// Get the binary representation of the last locally-made change.
+    [[nodiscard]] std::vector<uint8_t> get_last_local_change() const;
+
+    /// Get missing dependency hashes needed to reach `heads`.
+    [[nodiscard]] std::vector<uint8_t>
+    get_missing_deps(std::span<const uint8_t> heads) const;
+
+    /// Create an empty change with optional message/timestamp.
+    void empty_change(const std::string& message = {}, int64_t timestamp = 0);
+
+    /// Save only changes since `heads`.
+    [[nodiscard]] std::vector<uint8_t>
+    save_after(std::span<const uint8_t> heads) const;
+
+    /// Load incremental changes into this document.
+    void load_incremental(std::span<const uint8_t> data);
+
+    /// Fork at specific heads (snapshot at a point in history).
+    [[nodiscard]] Document fork_at(std::span<const uint8_t> heads);
+
+    /// Get the object type ("map", "list", "text") as a JSON string.
+    [[nodiscard]] std::string object_type(const ObjId& obj_id) const;
+
+    /// Diff between two sets of heads. Returns JSON patch array.
+    [[nodiscard]] std::string diff(std::span<const uint8_t> before_heads,
+                                   std::span<const uint8_t> after_heads) const;
+
+    /// Update a text object by diffing old vs new text (equivalent to JS updateText).
+    void update_text(const ObjId& obj_id, const std::string& new_text);
+
+    /// Add a rich text mark. expand: 0=none, 1=before, 2=after, 3=both.
+    void mark(const ObjId& obj_id, size_t start, size_t end,
+              const std::string& name, const std::string& value_json, uint8_t expand = 3);
+
+    /// Remove a mark. expand: 0=none, 1=before, 2=after, 3=both.
+    void unmark(const ObjId& obj_id, const std::string& name,
+                size_t start, size_t end, uint8_t expand = 3);
+
+    /// Get all marks on a text object. Returns JSON array.
+    [[nodiscard]] std::string marks(const ObjId& obj_id) const;
+
+    /// Get marks at specific heads. Returns JSON array.
+    [[nodiscard]] std::string marks_at(const ObjId& obj_id,
+                                       std::span<const uint8_t> heads) const;
+
+    /// Get a cursor for a position in a text object.
+    /// heads may be empty for current version.
+    [[nodiscard]] std::string get_cursor(const ObjId& obj_id, size_t position,
+                                         std::span<const uint8_t> heads = {}) const;
+
+    /// Resolve a cursor to a position.
+    [[nodiscard]] size_t get_cursor_position(const ObjId& obj_id,
+                                             const std::string& cursor,
+                                             std::span<const uint8_t> heads = {}) const;
+
+    /// Get rich text spans. Returns JSON array.
+    [[nodiscard]] std::string spans(const ObjId& obj_id) const;
+
+    /// Get document statistics. Returns JSON string.
+    [[nodiscard]] std::string stats() const;
+
+    /// Get map entries in a key range. empty string = unbounded.
+    [[nodiscard]] std::string map_range(const ObjId& obj_id,
+                                        const std::string& start = {},
+                                        const std::string& end = {}) const;
+
+    /// Get list entries in an index range.
+    [[nodiscard]] std::string list_range(const ObjId& obj_id,
+                                         size_t start, size_t end) const;
+
     // ─── Internal access ───────────────────────────────────────────────────
 
     /// Return the underlying raw handle.
