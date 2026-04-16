@@ -674,6 +674,67 @@ namespace Automerge.Windows
                     (nuint)start, (nuint)end, ref ptr, ref len));
         }
 
+        // ─── Block marker APIs ────────────────────────────────────────────────
+
+        /// <summary>Insert a block marker at index in a text object. Returns the block's object ID.</summary>
+        public string SplitBlock(string textObjId, int index)
+        {
+            ThrowIfDisposed();
+            IntPtr ptr = IntPtr.Zero;
+            nuint len = 0;
+            NativeMethods.CheckResult(
+                NativeMethods.AMsplit_block(_handle, textObjId, (nuint)index, ref ptr, ref len));
+            return ReadCString(ptr, len);
+        }
+
+        /// <summary>Remove the block marker at index from a text object.</summary>
+        public void JoinBlock(string textObjId, int index)
+        {
+            ThrowIfDisposed();
+            NativeMethods.CheckResult(
+                NativeMethods.AMjoin_block(_handle, textObjId, (nuint)index));
+        }
+
+        /// <summary>Replace the block marker at index. Returns the new block's object ID.</summary>
+        public string ReplaceBlock(string textObjId, int index)
+        {
+            ThrowIfDisposed();
+            IntPtr ptr = IntPtr.Zero;
+            nuint len = 0;
+            NativeMethods.CheckResult(
+                NativeMethods.AMreplace_block(_handle, textObjId, (nuint)index, ref ptr, ref len));
+            return ReadCString(ptr, len);
+        }
+
+        // ─── Additional gap-closing APIs ─────────────────────────────────────
+
+        /// <summary>Look up a specific change by its 32-byte hash.</summary>
+        public unsafe byte[] GetChangeByHash(ReadOnlySpan<byte> hash)
+        {
+            ThrowIfDisposed();
+            IntPtr ptr = IntPtr.Zero;
+            nuint len = 0;
+            fixed (byte* h = hash)
+            {
+                NativeMethods.CheckResult(
+                    NativeMethods.AMget_change_by_hash(_handle, h, (nuint)hash.Length, ref ptr, ref len));
+            }
+            return NativeMethods.ReadAndFree(ptr, len);
+        }
+
+        /// <summary>Check whether the document contains all the given heads.</summary>
+        public unsafe bool HasHeads(ReadOnlySpan<byte> heads)
+        {
+            ThrowIfDisposed();
+            int result = 0;
+            fixed (byte* h = heads)
+            {
+                NativeMethods.CheckResult(
+                    NativeMethods.AMhas_heads(_handle, h, (nuint)heads.Length, ref result));
+            }
+            return result != 0;
+        }
+
         // ─── Internal ─────────────────────────────────────────────────────────
 
         internal IntPtr Handle => _handle;

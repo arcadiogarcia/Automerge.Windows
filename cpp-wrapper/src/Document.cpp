@@ -424,5 +424,37 @@ std::string Document::list_range(const ObjId& obj_id,
     return take_json(ptr, len);
 }
 
+// ─── Block marker APIs ───────────────────────────────────────────────────────
+
+ObjId Document::split_block(const ObjId& obj_id, size_t index) {
+    uint8_t* ptr{}; size_t len{};
+    check(AMsplit_block(handle_, obj_id.c_str(), index, &ptr, &len));
+    return take_cstring(ptr, len);
+}
+
+void Document::join_block(const ObjId& obj_id, size_t index) {
+    check(AMjoin_block(handle_, obj_id.c_str(), index));
+}
+
+ObjId Document::replace_block(const ObjId& obj_id, size_t index) {
+    uint8_t* ptr{}; size_t len{};
+    check(AMreplace_block(handle_, obj_id.c_str(), index, &ptr, &len));
+    return take_cstring(ptr, len);
+}
+
+// ─── Additional gap-closing APIs ─────────────────────────────────────────────
+
+std::vector<uint8_t> Document::get_change_by_hash(std::span<const uint8_t> hash) const {
+    uint8_t* ptr{}; size_t len{};
+    check(AMget_change_by_hash(handle_, hash.data(), hash.size(), &ptr, &len));
+    return take_cbuf(ptr, len);
+}
+
+bool Document::has_heads(std::span<const uint8_t> heads) const {
+    int32_t result{};
+    check(AMhas_heads(handle_, heads.data(), heads.size(), &result));
+    return result != 0;
+}
+
 } // namespace automerge
 

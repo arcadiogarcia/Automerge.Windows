@@ -100,6 +100,16 @@ struct Document : DocumentT<Document>
     hstring MapRange(hstring const& objId, hstring const& start, hstring const& end);
     hstring ListRange(hstring const& objId, int32_t start, int32_t end);
 
+    // Block marker APIs
+    hstring SplitBlock(hstring const& textObjId, int32_t index);
+    void JoinBlock(hstring const& textObjId, int32_t index);
+    hstring ReplaceBlock(hstring const& textObjId, int32_t index);
+
+    // Additional gap-closing APIs
+    winrt::Windows::Storage::Streams::IBuffer GetChangeByHash(
+        winrt::Windows::Storage::Streams::IBuffer const& hash);
+    bool HasHeads(winrt::Windows::Storage::Streams::IBuffer const& heads);
+
     // Internal
     ::automerge::Document& native_doc() noexcept { return doc_; }
 

@@ -253,6 +253,26 @@ public:
     [[nodiscard]] std::string list_range(const ObjId& obj_id,
                                          size_t start, size_t end) const;
 
+    // ─── Block marker APIs ─────────────────────────────────────────────────
+
+    /// Insert a block marker at index in a text object. Returns block object ID.
+    [[nodiscard]] ObjId split_block(const ObjId& obj_id, size_t index);
+
+    /// Remove the block marker at index.
+    void join_block(const ObjId& obj_id, size_t index);
+
+    /// Replace the block marker at index. Returns new block object ID.
+    [[nodiscard]] ObjId replace_block(const ObjId& obj_id, size_t index);
+
+    // ─── Additional gap-closing APIs ───────────────────────────────────────
+
+    /// Look up a specific change by its 32-byte hash.
+    [[nodiscard]] std::vector<uint8_t>
+    get_change_by_hash(std::span<const uint8_t> hash) const;
+
+    /// Check whether the document contains all the given heads.
+    [[nodiscard]] bool has_heads(std::span<const uint8_t> heads) const;
+
     // ─── Internal access ───────────────────────────────────────────────────
 
     /// Return the underlying raw handle.

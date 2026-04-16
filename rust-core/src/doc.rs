@@ -1468,6 +1468,130 @@ pub unsafe extern "C" fn AMlist_range(
     write_json_out(JsonValue::Array(entries), out_json, out_len)
 }
 
+// ─── Block marker APIs ───────────────────────────────────────────────────────
+
+/// Insert a block marker at `index` in a text object.
+/// Returns the new block object ID. Caller frees with `AMfree_bytes(ptr, len + 1)`.
+#[no_mangle]
+pub unsafe extern "C" fn AMsplit_block(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    index: usize,
+    out_block_id: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_block_id);
+    check_ptr!(out_len);
+    let oid = match read_obj_id(obj_id) {
+        Ok(id) => id,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    match (*doc).0.split_block(&oid, index) {
+        Ok(block_id) => write_cstring_out(exid_to_string(&block_id), out_block_id, out_len),
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+/// Remove the block marker at `index` from a text object.
+#[no_mangle]
+pub unsafe extern "C" fn AMjoin_block(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    index: usize,
+) -> i32 {
+    check_ptr!(doc);
+    let oid = match read_obj_id(obj_id) {
+        Ok(id) => id,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    match (*doc).0.join_block(&oid, index) {
+        Ok(_) => AM_OK,
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+/// Replace the block marker at `index`, returning the new block's object ID.
+/// You can then set properties on the new block object using AMput.
+/// Caller frees ID with `AMfree_bytes(ptr, len + 1)`.
+#[no_mangle]
+pub unsafe extern "C" fn AMreplace_block(
+    doc: *mut AMdoc,
+    obj_id: *const c_char,
+    index: usize,
+    out_block_id: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_block_id);
+    check_ptr!(out_len);
+    let oid = match read_obj_id(obj_id) {
+        Ok(id) => id,
+        Err(e) => { set_last_error(e); return AM_ERR; }
+    };
+    match (*doc).0.replace_block(&oid, index) {
+        Ok(block_id) => write_cstring_out(exid_to_string(&block_id), out_block_id, out_len),
+        Err(e) => { set_last_error(e.to_string()); AM_ERR }
+    }
+}
+
+// ─── Additional gap-closing APIs ─────────────────────────────────────────────
+
+/// Look up a specific change by its hash. Returns the raw change bytes.
+/// Returns 0-length if not found. Caller frees with `AMfree_bytes`.
+#[no_mangle]
+pub unsafe extern "C" fn AMget_change_by_hash(
+    doc: *mut AMdoc,
+    hash: *const u8,
+    hash_len: usize,
+    out_bytes: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_bytes);
+    check_ptr!(out_len);
+    if hash.is_null() || hash_len != 32 {
+        set_last_error("hash must be exactly 32 bytes");
+        return AM_ERR;
+    }
+    let arr: [u8; 32] = std::slice::from_raw_parts(hash, 32).try_into().unwrap();
+    let ch = ChangeHash(arr);
+    match (*doc).0.get_change_by_hash(&ch) {
+        Some(change) => {
+            let raw = change.raw_bytes().to_vec();
+            *out_len = raw.len();
+            *out_bytes = alloc_bytes(raw);
+        }
+        None => {
+            *out_len = 0;
+            *out_bytes = std::ptr::NonNull::dangling().as_ptr();
+        }
+    }
+    AM_OK
+}
+
+/// Check whether the document contains all the given heads.
+/// Writes 1 to *out_result if all heads are present, 0 otherwise.
+#[no_mangle]
+pub unsafe extern "C" fn AMhas_heads(
+    doc: *mut AMdoc,
+    heads: *const u8,
+    heads_len: usize,
+    out_result: *mut i32,
+) -> i32 {
+    check_ptr!(doc);
+    check_ptr!(out_result);
+    let parsed = parse_heads(heads, heads_len);
+    if parsed.is_empty() {
+        *out_result = 1; // empty heads = trivially present
+        return AM_OK;
+    }
+    // A document "has" the given heads if get_missing_deps returns empty.
+    let missing = (*doc).0.get_missing_deps(&parsed);
+    *out_result = if missing.is_empty() { 1 } else { 0 };
+    AM_OK
+}
+
 
 /// Move a `Vec<u8>` to the heap; return raw pointer.
 /// Capacity is shrunk to `len` so `AMfree_bytes(ptr, len)` is safe.

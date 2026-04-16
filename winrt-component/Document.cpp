@@ -367,5 +367,40 @@ hstring Document::ListRange(hstring const& objId, int32_t start, int32_t end) {
     } catch (const std::exception& ex) { throw_winrt_error(ex); }
 }
 
+// ─── Block marker APIs ────────────────────────────────────────────────────────
+
+hstring Document::SplitBlock(hstring const& textObjId, int32_t index) {
+    try {
+        return string_to_hstring(
+            doc_.split_block(hstring_to_string(textObjId), static_cast<size_t>(index)));
+    } catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+void Document::JoinBlock(hstring const& textObjId, int32_t index) {
+    try { doc_.join_block(hstring_to_string(textObjId), static_cast<size_t>(index)); }
+    catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+hstring Document::ReplaceBlock(hstring const& textObjId, int32_t index) {
+    try {
+        return string_to_hstring(
+            doc_.replace_block(hstring_to_string(textObjId), static_cast<size_t>(index)));
+    } catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+// ─── Additional gap-closing APIs ─────────────────────────────────────────────
+
+winrt::Windows::Storage::Streams::IBuffer Document::GetChangeByHash(
+    winrt::Windows::Storage::Streams::IBuffer const& hash)
+{
+    try { return bytes_to_ibuffer(doc_.get_change_by_hash(ibuffer_to_bytes(hash))); }
+    catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
+bool Document::HasHeads(winrt::Windows::Storage::Streams::IBuffer const& heads) {
+    try { return doc_.has_heads(ibuffer_to_bytes(heads)); }
+    catch (const std::exception& ex) { throw_winrt_error(ex); }
+}
+
 } // namespace winrt::Automerge::Windows::implementation
 

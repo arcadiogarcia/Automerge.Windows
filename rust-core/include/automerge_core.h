@@ -393,6 +393,30 @@ int AMlist_range(AMdoc* doc, const char* obj_id,
                  size_t start, size_t end,
                  uint8_t** out_json, size_t* out_len);
 
+// ─── Block marker APIs ───────────────────────────────────────────────────────
+
+/// Insert a block marker at index in a text object. Returns the block's object ID.
+int AMsplit_block(AMdoc* doc, const char* obj_id, size_t index,
+                  uint8_t** out_block_id, size_t* out_len);
+
+/// Remove the block marker at index from a text object.
+int AMjoin_block(AMdoc* doc, const char* obj_id, size_t index);
+
+/// Replace the block marker at index. Returns the new block's object ID.
+int AMreplace_block(AMdoc* doc, const char* obj_id, size_t index,
+                    uint8_t** out_block_id, size_t* out_len);
+
+// ─── Additional gap-closing APIs ─────────────────────────────────────────────
+
+/// Look up a specific change by its 32-byte hash. Returns raw change bytes.
+int AMget_change_by_hash(AMdoc* doc, const uint8_t* hash, size_t hash_len,
+                         uint8_t** out_bytes, size_t* out_len);
+
+/// Check whether the document contains all the given heads.
+/// Writes 1 to out_result if all present, 0 if any missing.
+int AMhas_heads(AMdoc* doc, const uint8_t* heads, size_t heads_len,
+                int32_t* out_result);
+
 // ─── Sync ─────────────────────────────────────────────────────────────────────
 
 /// Create a new sync state.  Ownership is transferred to caller.

@@ -235,6 +235,34 @@ namespace Automerge.Windows
             IntPtr doc, string obj_id, nuint start, nuint end,
             ref IntPtr out_json, ref nuint out_len);
 
+        // ─── Block marker APIs ──────────────────────────────────────────────
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMsplit_block(
+            IntPtr doc, string obj_id, nuint index,
+            ref IntPtr out_block_id, ref nuint out_len);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMjoin_block(
+            IntPtr doc, string obj_id, nuint index);
+
+        [LibraryImport(Lib, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int AMreplace_block(
+            IntPtr doc, string obj_id, nuint index,
+            ref IntPtr out_block_id, ref nuint out_len);
+
+        // ─── Additional gap-closing APIs ────────────────────────────────────
+
+        [LibraryImport(Lib)]
+        internal static partial int AMget_change_by_hash(
+            IntPtr doc, byte* hash, nuint hash_len,
+            ref IntPtr out_bytes, ref nuint out_len);
+
+        [LibraryImport(Lib)]
+        internal static partial int AMhas_heads(
+            IntPtr doc, byte* heads, nuint heads_len,
+            ref int out_result);
+
         // ─── Sync ───────────────────────────────────────────────────────────
         [LibraryImport(Lib)] internal static partial IntPtr AMcreate_sync_state();
         [LibraryImport(Lib)] internal static partial void AMfree_sync_state(IntPtr state);
