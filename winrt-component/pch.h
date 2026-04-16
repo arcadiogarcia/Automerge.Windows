@@ -10,6 +10,8 @@
 #include <winrt/base.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Storage.Streams.h>
+#include <winrt/Windows.Networking.Sockets.h>
+#include <winrt/Windows.System.Threading.h>
 
 // Bring the entire winrt namespace into scope — standard C++/WinRT component
 // practice so that component headers can use Windows::... shorthand.
@@ -17,11 +19,16 @@ using namespace winrt;
 
 // C++ standard library
 #include <array>
+#include <atomic>
 #include <cstdint>
+#include <deque>
+#include <memory>
+#include <mutex>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 // Forward declaration of C++ wrapper types used throughout.

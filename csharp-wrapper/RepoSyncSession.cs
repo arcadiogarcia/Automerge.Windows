@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Formats.Cbor;
 using System.Net.WebSockets;
+using System.Numerics;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -57,6 +59,8 @@ namespace Automerge.Windows
         private ClientWebSocket? _ws;
         private string? _remotePeerId;
         private bool _disposed;
+        // Track whether this is the first sync for this session (use "request" type)
+        private bool _firstPush = true;
 
         /// <summary>
         /// Create a session. Does not connect until <see cref="RunAsync"/> or
@@ -117,35 +121,41 @@ namespace Automerge.Windows
             await ConnectAndHandshakeAsync(cancellationToken);
             await PushAsync(doc, syncState, cancellationToken);
 
+            // Keep exactly one pending read alive at all times.
+            // Using the main CT (not a short-lived poll CT) prevents ClientWebSocket
+            // from entering the Aborted state on each 1-second interval.
+            Task<byte[]?> pendingRead = ReadFrameAsync(cancellationToken);
+
             while (!cancellationToken.IsCancellationRequested)
             {
-                byte[]? frame;
-                try
-                {
-                    // 1-second poll so local changes are pushed even with no server traffic.
-                    using var poll = CancellationTokenSource.CreateLinkedTokenSource(
-                        cancellationToken);
-                    poll.CancelAfter(TimeSpan.FromSeconds(1));
-                    frame = await ReadFrameAsync(poll.Token);
-                }
-                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                {
-                    await PushAsync(doc, syncState, cancellationToken);
-                    continue;
-                }
+                // Wake up when either a frame arrives or after 1 second.
+                var delay = Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                var done  = await Task.WhenAny(pendingRead, delay);
 
-                if (frame == null) break; // server closed
+                if (ReferenceEquals(done, pendingRead))
+                {
+                    byte[]? frame = await pendingRead;
+                    if (frame == null) break; // server closed cleanly
 
-                var (type, fields) = ParseFrame(frame);
-                if (type == "sync" && fields.TryGetValue("data", out var raw))
-                {
-                    syncState.ReceiveSyncMessage(doc, (byte[])raw);
-                    await PushAsync(doc, syncState, cancellationToken);
+                    // Start the next read before processing so the socket stays warm.
+                    pendingRead = ReadFrameAsync(cancellationToken);
+
+                    var (type, fields) = ParseFrame(frame);
+                    if (type == "sync" && fields.TryGetValue("data", out var raw))
+                    {
+                        syncState.ReceiveSyncMessage(doc, (byte[])raw);
+                        await PushAsync(doc, syncState, cancellationToken);
+                    }
+                    else if (type == "error")
+                    {
+                        var msg = fields.TryGetValue("message", out var m) ? (string)m : "unknown";
+                        throw new AutomergeNativeException($"Sync server error: {msg}");
+                    }
                 }
-                else if (type == "error")
+                else
                 {
-                    var msg = fields.TryGetValue("message", out var m) ? (string)m : "unknown";
-                    throw new AutomergeNativeException($"Sync server error: {msg}");
+                    // 1-second poll — push any local changes that accumulated.
+                    await PushAsync(doc, syncState, cancellationToken);
                 }
             }
         }
@@ -247,6 +257,7 @@ namespace Automerge.Windows
         {
             _ws?.Dispose();
             _ws = new ClientWebSocket();
+            _firstPush = true; // reset for this new connection
             await _ws.ConnectAsync(new Uri(_serverUrl), ct);
             await SendFrameAsync(EncodeJoin(), ct);
             _remotePeerId = await WaitForPeerAsync(ct);
@@ -275,30 +286,38 @@ namespace Automerge.Windows
         {
             var outgoing = syncState.GenerateSyncMessage(doc);
             if (outgoing.Length > 0)
-                await SendFrameAsync(EncodeSyncMessage(outgoing), ct);
+            {
+                // Use "request" for the first message to tell the server we want this document;
+                // use "sync" for subsequent messages once we know the server has seen our session.
+                var msgType = _firstPush ? "request" : "sync";
+                _firstPush = false;
+                await SendFrameAsync(EncodeSyncMessage(outgoing, msgType), ct);
+            }
         }
 
         // ─── CBOR encode ──────────────────────────────────────────────────────
 
         private byte[] EncodeJoin()
         {
+            // Use definite-length map/array (strict CBOR servers may reject indefinite-length)
             var w = new CborWriter(CborConformanceMode.Lax);
-            w.WriteStartMap(null);                                    // indefinite map
+            w.WriteStartMap(4);                                       // 4 entries
             Kv(w, "type",    "join");
             Kv(w, "senderId", _peerId);
             w.WriteTextString("peerMetadata");
-            w.WriteStartMap(null); w.WriteEndMap();                   // {}
+            w.WriteStartMap(0); w.WriteEndMap();                      // {}
             w.WriteTextString("supportedProtocolVersions");
-            w.WriteStartArray(null); w.WriteTextString("1"); w.WriteEndArray();
+            w.WriteStartArray(1); w.WriteTextString("1"); w.WriteEndArray();
             w.WriteEndMap();
             return w.Encode();
         }
 
-        private byte[] EncodeSyncMessage(byte[] syncData)
+        private byte[] EncodeSyncMessage(byte[] syncData, string type = "sync")
         {
+            // Use definite-length maps so the server's CBOR decoder handles them regardless of mode.
             var w = new CborWriter(CborConformanceMode.Lax);
-            w.WriteStartMap(null);
-            Kv(w, "type",       "sync");
+            w.WriteStartMap(5);
+            Kv(w, "type",       type);
             Kv(w, "senderId",    _peerId);
             Kv(w, "targetId",    _remotePeerId ?? string.Empty);
             Kv(w, "documentId",  _documentId);
@@ -364,20 +383,29 @@ namespace Automerge.Windows
         private async Task<byte[]?> ReadFrameAsync(CancellationToken ct)
         {
             if (_ws == null) return null;
+            // ClientWebSocket.ReceiveAsync throws WebSocketException if the socket was
+            // previously cancelled (state == Aborted). Return null so callers treat it
+            // as a clean close rather than a hard failure.
+            if (_ws.State is not (WebSocketState.Open or WebSocketState.CloseReceived))
+                return null;
             var buf    = new byte[64 * 1024]; // 64 KiB receive buffer per chunk
             var chunks = new List<byte[]>();
             WebSocketReceiveResult result;
-            do
+            try
             {
-                result = await _ws.ReceiveAsync(new ArraySegment<byte>(buf), ct);
-                if (result.MessageType == WebSocketMessageType.Close) return null;
-                if (result.Count > 0)
+                do
                 {
-                    var chunk = new byte[result.Count];
-                    Buffer.BlockCopy(buf, 0, chunk, 0, result.Count);
-                    chunks.Add(chunk);
-                }
-            } while (!result.EndOfMessage);
+                    result = await _ws.ReceiveAsync(new ArraySegment<byte>(buf), ct);
+                    if (result.MessageType == WebSocketMessageType.Close) return null;
+                    if (result.Count > 0)
+                    {
+                        var chunk = new byte[result.Count];
+                        Buffer.BlockCopy(buf, 0, chunk, 0, result.Count);
+                        chunks.Add(chunk);
+                    }
+                } while (!result.EndOfMessage);
+            }
+            catch (WebSocketException) { return null; }
 
             if (chunks.Count == 0) return Array.Empty<byte>();
             if (chunks.Count == 1) return chunks[0];
@@ -388,6 +416,47 @@ namespace Automerge.Windows
             int off = 0;
             foreach (var c in chunks) { Buffer.BlockCopy(c, 0, full, off, c.Length); off += c.Length; }
             return full;
+        }
+
+        // ─── Document ID generation ───────────────────────────────────────────
+
+        /// <summary>
+        /// Generate a new random document ID in the format required by the
+        /// automerge-repo v1 protocol (base58check-encoded 16-byte UUID).
+        /// </summary>
+        /// <remarks>
+        /// The document ID used in <see cref="RunAsync"/> and
+        /// <see cref="SyncOnceAsync"/> must be in this format;  plain UUID
+        /// strings are rejected by the server.
+        /// </remarks>
+        public static string NewDocumentId()
+        {
+            var uid = Guid.NewGuid().ToByteArray();
+            Span<byte> h1 = stackalloc byte[32];
+            Span<byte> h2 = stackalloc byte[32];
+            SHA256.TryHashData(uid, h1, out _);
+            SHA256.TryHashData(h1, h2, out _);
+            var full = new byte[uid.Length + 4];
+            uid.CopyTo(full, 0);
+            h2[..4].CopyTo(full.AsSpan(uid.Length));
+            return Base58Encode(full);
+        }
+
+        private static readonly string _b58 =
+            "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+        private static string Base58Encode(byte[] data)
+        {
+            var sb  = new System.Text.StringBuilder();
+            var num = new BigInteger(data, isUnsigned: true, isBigEndian: true);
+            var b58 = new BigInteger(58);
+            while (num > BigInteger.Zero)
+            {
+                num = BigInteger.DivRem(num, b58, out var rem);
+                sb.Insert(0, _b58[(int)rem]);
+            }
+            for (int i = 0; i < data.Length && data[i] == 0; i++) sb.Insert(0, '1');
+            return sb.ToString();
         }
 
         private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);

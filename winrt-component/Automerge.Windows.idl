@@ -135,4 +135,35 @@ namespace Automerge.Windows
         Windows.Storage.Streams.IBuffer Save();
         static SyncState Load(Windows.Storage.Streams.IBuffer data);
     }
+
+    // ─── RepoSyncSession ──────────────────────────────────────────────────────
+
+    /// WebSocket sync session compatible with the automerge-repo v1 protocol.
+    ///
+    /// <para>
+    /// Connects to a sync server (e.g. wss://sync.automerge.org), performs the
+    /// join/peer handshake, then exchanges automerge sync-protocol messages
+    /// until convergence or cancellation.
+    /// </para>
+    runtimeclass RepoSyncSession
+    {
+        /// Create a session using a randomly-generated peer ID.
+        RepoSyncSession(String serverUrl, String documentId);
+
+        /// Create a session with an explicit stable peer ID.
+        RepoSyncSession(String serverUrl, String documentId, String peerId);
+
+        /// Connect and run the sync loop until the IAsyncAction is cancelled.
+        Windows.Foundation.IAsyncAction RunAsync(Document doc, SyncState syncState);
+
+        /// Connect, sync to convergence (2-second idle), then disconnect.
+        static Windows.Foundation.IAsyncAction SyncOnceAsync(
+            String serverUrl,
+            String documentId,
+            Document doc,
+            SyncState syncState);
+
+        /// Gracefully close the WebSocket connection.
+        Windows.Foundation.IAsyncAction CloseAsync();
+    }
 }

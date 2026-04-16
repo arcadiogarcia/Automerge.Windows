@@ -214,10 +214,12 @@ Write-Host "  -> $genDir\Automerge.Windows.g.h + module.g.cpp" -ForegroundColor 
 # "Document.h" / "SyncState.h" and searches its own directory (genDir) first,
 # which would find these stubs (containing static_assert(false)).  We provide
 # our own implementations in $srcDir, so delete the generated stubs now.
-Remove-Item "$genDir\Document.h"   -ErrorAction SilentlyContinue
-Remove-Item "$genDir\Document.cpp" -ErrorAction SilentlyContinue
-Remove-Item "$genDir\SyncState.h"   -ErrorAction SilentlyContinue
-Remove-Item "$genDir\SyncState.cpp" -ErrorAction SilentlyContinue
+Remove-Item "$genDir\Document.h"         -ErrorAction SilentlyContinue
+Remove-Item "$genDir\Document.cpp"       -ErrorAction SilentlyContinue
+Remove-Item "$genDir\SyncState.h"        -ErrorAction SilentlyContinue
+Remove-Item "$genDir\SyncState.cpp"      -ErrorAction SilentlyContinue
+Remove-Item "$genDir\RepoSyncSession.h"  -ErrorAction SilentlyContinue
+Remove-Item "$genDir\RepoSyncSession.cpp" -ErrorAction SilentlyContinue
 
 # ─── Common compiler flags ────────────────────────────────────────────────────
 
@@ -243,7 +245,7 @@ $linkLibPaths = @(
 
 Write-Host "`nStep 3: Compile source files" -ForegroundColor Cyan
 
-foreach ($src in @("Document.cpp","SyncState.cpp","dll_exports.cpp")) {
+foreach ($src in @("Document.cpp","SyncState.cpp","RepoSyncSession.cpp","dll_exports.cpp")) {
     $obj = "$intDir\$([IO.Path]::GetFileNameWithoutExtension($src)).obj"
     Write-Host "  cl $src" -ForegroundColor Gray
     & $cl @clFlags /Fo"$obj" /c "$srcDir\$src"
@@ -261,6 +263,7 @@ Write-Host "`nStep 5: Link Automerge.Windows.dll" -ForegroundColor Cyan
 $objs = @(
     "$intDir\Document.obj",
     "$intDir\SyncState.obj",
+    "$intDir\RepoSyncSession.obj",
     "$intDir\dll_exports.obj",
     "$intDir\module.g.obj"
 )

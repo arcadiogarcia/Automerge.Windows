@@ -24,6 +24,9 @@ struct SyncState : SyncStateT<SyncState>
     static winrt::Automerge::Windows::SyncState Load(
         winrt::Windows::Storage::Streams::IBuffer const& data);
 
+    // Internal
+    ::automerge::SyncState& native_state() noexcept { return state_; }
+
 private:
     ::automerge::SyncState state_;
 };

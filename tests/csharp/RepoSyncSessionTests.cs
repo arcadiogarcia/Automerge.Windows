@@ -168,7 +168,7 @@ namespace AutomergeTests
                 catch (OperationCanceledException) { break; }
                 catch (Exception) { break; }
 
-                if (type is "_close" or "_timeout" or not "sync") break;
+                if (type is "_close" or "_timeout" || type is not ("sync" or "request")) break;
 
                 serverSync.ReceiveSyncMessage(serverDoc, (byte[])df["data"]);
 
