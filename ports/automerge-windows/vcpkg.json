@@ -1,6 +1,6 @@
 {
   "name": "automerge-windows",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Native Windows bindings for the Automerge CRDT library. Provides automerge::wrapper (C++ header-only style wrapper) over automerge_core.dll (Rust).",
   "homepage": "https://github.com/arcadiogarcia/Automerge.Windows",
   "license": "MIT",
