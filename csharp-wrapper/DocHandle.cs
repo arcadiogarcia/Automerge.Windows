@@ -204,6 +204,30 @@ namespace Automerge.Windows
         /// <summary>Access the underlying document directly (for repo internals).</summary>
         public Document InternalDoc => _doc;
 
+        /// <summary>
+        /// Thread-safe snapshot of the document's current state as a byte array.
+        /// Equivalent to <c>lock(handle) { return doc.Save(); }</c>. Used by
+        /// <see cref="Repo"/>'s background persist path to capture a consistent
+        /// view of the document without racing with concurrent <see cref="Change"/>
+        /// calls — which is otherwise possible because the repo dispatches
+        /// persists asynchronously after each Changed event.
+        /// </summary>
+        public byte[] SaveLocked()
+        {
+            lock (_lock) { return _doc.Save(); }
+        }
+
+        /// <summary>
+        /// Thread-safe snapshot of the document's current heads (as a binary
+        /// hash sequence). Used together with <see cref="SaveLocked"/> so the
+        /// snapshot and its addressing key correspond to the same document
+        /// state.
+        /// </summary>
+        public byte[] HeadsLocked()
+        {
+            lock (_lock) { return _doc.GetHeads(); }
+        }
+
         // ─── IDisposable ──────────────────────────────────────────────────────
 
         public void Dispose()
